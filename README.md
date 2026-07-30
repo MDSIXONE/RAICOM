@@ -19,6 +19,7 @@
 
 - `MODEL_ROUTING.md`：GPT-5.6 子模型路由、风险分级和任务执行规范。
 - `AGENTS.md`：仓库贡献规范及智能体协作要求。
+- `.agents/skills/project-memory-records/`：随仓库同步的 AI 工作记录技能。
 - `docs/ai-records/`：跨对话的代码改动、犯错和失败方案记录。
 - `README.md`：项目简介和快速入口。
 
