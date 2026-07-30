@@ -27,7 +27,7 @@
 项目目录按开发、仿真、训练和资料分离：
 
 ```text
-RAICOM/
+项目根目录/
 ├── catkin_ws/src/              # 机器狗 ROS 源码包（后续放 perception、navigation 等）
 ├── wsl-simulation/             # WSL Ubuntu 20.04 中运行的仿真工程与配置
 ├── blender-maps/               # 比赛场地地图的 Blender 源文件
