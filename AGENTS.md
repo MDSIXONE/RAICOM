@@ -38,4 +38,4 @@ Any task that writes or modifies source code must use at least one sub-agent for
 
 ## AI Work Records
 
-Use the `project-memory-records` skill for project work. At every new conversation, read `docs/ai-records/CHANGE_LOG.md` and `MISTAKE_LOG.md`; read `FAILED_APPROACHES.md` before choosing a new approach. For source-code work, create or mark a change unit `进行中` and update it to `改动完成` after each completed code change—these are the only permitted statuses. Record reusable mistakes once confirmed. Record a failed approach only when the user says it failed or the work switches approaches.
+Use the repository `project-memory-records` skill for all project work.

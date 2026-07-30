@@ -77,4 +77,4 @@ source devel/setup.bash
 
 ## 协作说明
 
-开始开发前请阅读 `AGENTS.md`。编写或修改代码时必须使用子智能体协作，并由主智能体负责整合结果、检查实际差异和验证测试。每次新对话还必须读取 `docs/ai-records/` 中规定的记录；具体写入规则由 `project-memory-records` 技能定义。
+开始开发前请阅读 `AGENTS.md`。编写或修改代码时必须使用子智能体协作，并由主智能体负责整合结果、检查实际差异和验证测试。AI 工作记录统一由项目技能 `project-memory-records` 管理。
