@@ -1,0 +1,18 @@
+# ROS Catkin build artifacts
+/catkin_ws/build/
+/catkin_ws/devel/
+/catkin_ws/install/
+/catkin_ws/log/
+
+# Local temporary files
+/tmp/*
+!/tmp/.gitkeep
+
+# Large training datasets: track metadata or manifests separately if needed
+/datasets/yolo/*
+!/datasets/yolo/.gitkeep
+/datasets/ocr/*
+!/datasets/ocr/.gitkeep
+
+# Sensitive machine information
+/robot-information/private/

@@ -22,17 +22,30 @@
 - `docs/ai-records/`：跨对话的代码改动、犯错和失败方案记录。
 - `README.md`：项目简介和快速入口。
 
-项目目前处于初始化阶段，ROS 工作空间、功能包、启动文件和测试目录尚未建立。后续建议采用标准 Catkin 工作空间结构，例如：
+## 目录结构
+
+项目目录按开发、仿真、训练和资料分离：
 
 ```text
-catkin_ws/
-├── src/
-│   ├── perception/
-│   ├── navigation/
-│   ├── motion_control/
-│   └── mission_manager/
-└── README.md
+RAICOM/
+├── catkin_ws/src/              # 机器狗 ROS 源码包（后续放 perception、navigation 等）
+├── wsl-simulation/             # WSL Ubuntu 20.04 中运行的仿真工程与配置
+├── blender-maps/               # 比赛场地地图的 Blender 源文件
+├── datasets/
+│   ├── yolo/                   # YOLO 视觉训练数据集
+│   └── ocr/                    # OCR 训练数据集
+├── tmp/                        # 用户本机临时文件，不提交 Git
+├── competition-rules/           # 赛事规则、任务书和官方补充说明
+├── docs/
+│   ├── technical/              # 技术方案、接口、调试和部署文档
+│   └── ai-records/             # AI 跨对话工作记录
+├── archive/preliminary-code/   # 已结束的预选赛代码，只读归档
+└── robot-information/          # 机器狗型号、接口、标定和设备资料
 ```
+
+Blender 地图必须使用本机的 `G:\Blender 5.1` 工具链创建或编辑。WSL 仿真文件位于 `wsl-simulation/`；在默认挂载配置下可通过 `/mnt/g/AICODE/01_PROJECTS/RICAM/wsl-simulation/` 访问。
+
+原始 YOLO/OCR 数据集通常较大，已默认排除在 Git 提交之外；仅提交数据说明、清单或可公开的小型样例。`robot-information/private/` 用于本机敏感资料，也不会提交。
 
 ## 快速开始
 
