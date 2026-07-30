@@ -20,7 +20,7 @@
 - `MODEL_ROUTING.md`：GPT-5.6 子模型路由、风险分级和任务执行规范。
 - `AGENTS.md`：仓库贡献规范及智能体协作要求。
 - `.agents/skills/project-memory-records/`：随仓库同步的 AI 工作记录技能。
-- `docs/technical-reports/`：技术报告、阶段总结和赛后复盘。
+- `technical-reports/`：技术报告、阶段总结和赛后复盘。
 - `docs/ai-records/`：跨对话的代码改动、犯错和失败方案记录。
 - `README.md`：项目简介和快速入口。
 
@@ -38,9 +38,9 @@
 │   └── ocr/                    # OCR 训练数据集
 ├── tmp/                        # 用户本机临时文件，不提交 Git
 ├── competition-rules/           # 赛事规则、任务书和官方补充说明
+├── technical-reports/           # 技术报告、阶段总结和赛后复盘
 ├── docs/
 │   ├── technical/              # 技术方案、接口、调试和部署文档
-│   ├── technical-reports/      # 技术报告、阶段总结和赛后复盘
 │   └── ai-records/             # AI 跨对话工作记录
 ├── archive/preliminary-code/   # 已结束的预选赛代码，只读归档
 └── robot-information/          # 机器狗型号、接口、标定和设备资料
