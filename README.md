@@ -28,25 +28,37 @@
 
 ## 目录结构
 
-项目目录按开发、仿真、训练和资料分离：
+项目目录按开发、仿真、训练和资料分离。下方结构树由 GitHub Actions 自动生成：
 
+<!-- PROJECT_STRUCTURE_TREE:START -->
 ```text
 项目根目录/
-├── catkin_ws/src/              # 机器狗 ROS 源码包（后续放 perception、navigation 等）
-├── wsl-simulation/             # WSL Ubuntu 20.04 中运行的仿真工程与配置
-├── blender-maps/               # 比赛场地地图的 Blender 源文件
+├── archive/
+│   └── preliminary-code/
+├── blender-maps/
+├── catkin_ws/
+│   └── src/
+├── competition-rules/
 ├── datasets/
-│   ├── yolo/                   # YOLO 视觉训练数据集
-│   └── ocr/                    # OCR 训练数据集
-├── tmp/                        # 用户本机临时文件，不提交 Git
-├── competition-rules/           # 赛事规则、任务书和官方补充说明
-├── technical-reports/           # 技术报告、阶段总结和赛后复盘
+│   ├── ocr/
+│   └── yolo/
 ├── docs/
-│   ├── technical/              # 技术方案、接口、调试和部署文档
-│   └── ai-records/             # AI 跨对话工作记录
-├── archive/preliminary-code/   # 已结束的预选赛代码，只读归档
-└── robot-information/          # 机器狗型号、接口、标定和设备资料
+│   ├── ai-records/
+│   └── technical/
+├── robot-information/
+│   ├── camera/
+│   │   └── raspberry-pi-camera-module-3/
+│   ├── compute/
+│   │   ├── horizon-x3/
+│   │   └── raspberry-pi-cm4/
+│   └── control/
+│       └── esp32/
+├── scripts/
+├── technical-reports/
+├── tmp/
+└── wsl-simulation/
 ```
+<!-- PROJECT_STRUCTURE_TREE:END -->
 
 Blender 地图必须使用本机的 `G:\Blender 5.1` 工具链创建或编辑。WSL 仿真文件位于 `wsl-simulation/`；在默认挂载配置下可通过 `/mnt/g/AICODE/01_PROJECTS/RICAM/wsl-simulation/` 访问。
 

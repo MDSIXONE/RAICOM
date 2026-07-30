@@ -4,6 +4,10 @@
 /catkin_ws/install/
 /catkin_ws/log/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Local temporary files
 /tmp/*
 !/tmp/.gitkeep
