@@ -12,6 +12,6 @@
 ## 2026-07-30｜GitHub CLI 登录未配置 Git 推送凭据
 
 - 现象：`gh auth status` 显示已登录，但 `git push` 因无法读取 GitHub 用户名而失败。
-- 原因：Git 尚未使用 GitHub CLI 作为 HTTPS 凭据助手。
-- 防范规则：首次通过 `gh` 建仓或推送前，运行 `gh auth setup-git`，再执行 `git push`。
+- 原因：全局 Git Credential Manager 覆盖了 GitHub CLI 的 URL 专用凭据助手。
+- 防范规则：首次推送前先运行 `gh auth setup-git` 并验证 Git 凭据助手实际可用；若仍失败，在仓库本地将 `credential.helper` 覆盖为 GitHub CLI 助手后再推送。
 - 关联改动：`chore: establish project directory structure`
