@@ -26,7 +26,7 @@ Preview Markdown and check headings, tables, lists, and code fences. Verify rout
 
 ## Commit & Pull Request Guidelines
 
-No existing Git convention can yet be inferred. Use imperative commits such as `docs: clarify Terra escalation criteria`. Pull requests should explain affected sections, safety implications, validation, linked issues, and layout screenshots when needed.
+Use a Chinese Emoji subject in the form `Emoji 范围：简短动作`, for example `🧭 导航：优化目标点路径规划`. Use one coherent change per commit. Preferred scopes include `🤖 ROS`、`🧭 导航`、`👁️ 视觉`、`🔤 OCR`、`🗺️ 地图`、`🐛 修复`、`🧪 测试`、`🔧 配置` and `📚 文档`. Do not rewrite published history merely to restyle messages. Pull requests should explain affected sections, safety implications, validation, linked issues, and layout screenshots when needed.
 
 ## Security & Configuration
 
