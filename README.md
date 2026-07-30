@@ -22,6 +22,8 @@
 - `.agents/skills/project-memory-records/`：随仓库同步的 AI 工作记录技能。
 - `technical-reports/`：技术报告、阶段总结和赛后复盘。
 - `docs/ai-records/`：跨对话的代码改动、犯错和失败方案记录。
+- `competition-rules/`：赛事规则 PDF 及 [规则摘要](competition-rules/2026睿抗国赛规则-物流配送挑战赛-足式4.2-摘要.md)。
+- `robot-information/`：机器狗统一平台约束、上位机/摄像头/下位机参考资料及下载清单。
 - `README.md`：项目简介和快速入口。
 
 ## 目录结构
