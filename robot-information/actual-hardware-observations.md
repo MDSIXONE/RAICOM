@@ -6,6 +6,43 @@
 
 ## 1. 已确认事实
 
+### 1.0 上位机系统与资源（SSH 只读采集）
+
+> 采集日期：2026-08-02。以下结果来自上位机 SSH 会话中的只读命令；不包含 IP、密码、机器 ID 等敏感接入信息。
+
+| 项目 | 已确认信息 |
+| --- | --- |
+| 设备型号 | Raspberry Pi Compute Module 5 Lite Rev 1.0 |
+| 主机名 | `pi` |
+| 操作系统 | Debian GNU/Linux 12（bookworm） |
+| 内核 | `6.6.62+rpt-rpi-2712`，`aarch64` |
+| CPU | 4 核 ARM Cortex-A76；频率范围 1.5–2.4 GHz；L2 缓存 2 MiB，L3 缓存 2 MiB |
+| 内存 | 4.0 GiB（采集时已用 671 MiB、可用 3.3 GiB） |
+| Swap | 199 MiB（采集时未使用） |
+| 系统存储 | `mmcblk0`，总容量 29.8 GiB；根分区为 ext4，容量 29 GiB |
+| 根分区空间 | 已用 25 GiB、可用约 3.1 GiB、使用率 89% |
+| 启动分区 | `/boot/firmware`，FAT32，511 MiB；可用约 435 MiB |
+| ROS | 未安装：`rosversion` 不存在、`/opt/ros/` 为空，`ROS_DISTRO` 与 `ROS_VERSION` 均未设置 |
+
+根分区使用率已接近 90%。在安装 ROS、下载模型或保存数据集前，应先检查占用并预留足够空间，避免写满系统盘导致服务异常。
+
+### 1.0.1 USB 设备与拓扑（SSH 只读采集）
+
+已发现的非根集线器 USB 外设如下；其余条目均为 Linux 主机控制器的根 Hub。
+
+| 拓扑位置 | 设备 | USB ID | 速率 | Linux 驱动 |
+| --- | --- | --- | --- | --- |
+| Bus 5 / Port 1 | Terminus Technology USB 2.0 Hub | `1a40:0101` | 480 Mb/s | `hub/4p` |
+| Bus 5 / Port 1.1 | Silicon Labs CP2102 USB-to-UART Bridge Controller | `10c4:ea60` | 12 Mb/s | `cp210x` |
+
+USB 根 Hub 情况：
+
+- Bus 1、Bus 3：`xhci-hcd` USB 2.0 根 Hub，最高 480 Mb/s。
+- Bus 2、Bus 4：`xhci-hcd` USB 3.0 根 Hub，最高 5 Gb/s。
+- Bus 5：`dwc2` USB 2.0 根 Hub，最高 480 Mb/s；当前 Hub 和 CP2102 串口桥均挂载在此总线上。
+
+这表明上位机可见一个 CP2102 串口桥，但尚未仅凭枚举信息确认它对应 ESP32 下位机、机械臂或其他外设；在未识别串口设备节点、波特率和通信协议前，不要向其发送控制字节。
+
 ### 1.1 外观与网络
 
 - 机头 AI 模组带彩色屏幕、前置摄像头和 XGO 标识。

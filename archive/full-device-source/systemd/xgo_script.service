@@ -1,0 +1,13 @@
+[Unit]
+Description=xgo Python Script
+After=network.target
+
+[Service]
+ExecStart=/home/pi/RaspberryPi-CM4/xgovenv/bin/python /home/pi/RaspberryPi-CM4/main.py
+WorkingDirectory=/home/pi/RaspberryPi-CM4
+User=pi
+Environment="PATH=/home/pi/RaspberryPi-CM4/"
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

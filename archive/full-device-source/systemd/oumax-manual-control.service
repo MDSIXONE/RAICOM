@@ -1,0 +1,20 @@
+[Unit]
+Description=OUMAX XGO manual control service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/oumax-xgo
+Environment=OUMAX_DOG_VERSION=auto
+Environment=OUMAX_MANUAL_PORT=8765
+Environment=OUMAX_GAMEPAD_UDP_PORT=8766
+ExecStart=/home/pi/RaspberryPi-CM5/xgovenv/bin/python /home/pi/oumax-xgo/manual_control_server.py
+Restart=always
+RestartSec=2
+StandardOutput=append:/home/pi/oumax-xgo/manual_control.log
+StandardError=append:/home/pi/oumax-xgo/manual_control.log
+
+[Install]
+WantedBy=multi-user.target

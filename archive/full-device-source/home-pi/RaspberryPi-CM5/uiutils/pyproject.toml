@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uiutils"
+version = "1.0.0"
+description = "XGO base library for Raspberry Pi"
+requires-python = ">=3.7"
+
+[tool.setuptools]
+packages = { find = { where = ["src"] } }

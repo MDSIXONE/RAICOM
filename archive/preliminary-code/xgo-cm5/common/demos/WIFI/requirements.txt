@@ -1,0 +1,6 @@
+Flask==2.3.3
+qrcode[pil]==7.4.2
+netifaces==0.11.0
+Pillow==10.0.1
+spidev==3.6
+RPi.GPIO==0.7.1

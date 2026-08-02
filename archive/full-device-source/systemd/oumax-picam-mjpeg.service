@@ -1,0 +1,17 @@
+[Unit]
+Description=OUMAX Picamera2 MJPEG stream server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/oumax-xgo
+ExecStart=/home/pi/RaspberryPi-CM5/xgovenv/bin/python /home/pi/oumax-xgo/picam_mjpeg_server.py
+Restart=always
+RestartSec=2
+StandardOutput=append:/home/pi/oumax-xgo/picam_mjpeg.log
+StandardError=append:/home/pi/oumax-xgo/picam_mjpeg.log
+
+[Install]
+WantedBy=multi-user.target

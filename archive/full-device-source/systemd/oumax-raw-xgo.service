@@ -1,0 +1,20 @@
+[Unit]
+Description=OUMAX raw XGO TCP frame service for MAXVR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/oumax-xgo
+Environment=OUMAX_RAW_XGO_PORT=8765
+Environment=OUMAX_SERIAL_PORT=/dev/ttyAMA0
+Environment=OUMAX_SERIAL_BAUD=115200
+ExecStart=/home/pi/RaspberryPi-CM5/xgovenv/bin/python /home/pi/oumax-xgo/raw_xgo_tcp_server.py
+Restart=always
+RestartSec=2
+StandardOutput=append:/home/pi/oumax-xgo/raw_xgo_tcp.log
+StandardError=append:/home/pi/oumax-xgo/raw_xgo_tcp.log
+
+[Install]
+WantedBy=multi-user.target
