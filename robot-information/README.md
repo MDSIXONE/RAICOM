@@ -19,6 +19,7 @@
 | [`compute/horizon-x3/`](compute/horizon-x3/) | 地平线 RDK X3 Module 参考资料 |
 | [`camera/raspberry-pi-camera-module-3/`](camera/raspberry-pi-camera-module-3/) | Raspberry Pi Camera Module 3 参考资料 |
 | [`control/esp32/`](control/esp32/) | ESP32 下位机参考资料 |
+| [`course-resources/max/`](course-resources/max/) | MAX 四足机器人课程课件与示例资源原始包 |
 | [`actual-hardware-observations.md`](actual-hardware-observations.md) | 当前实机的网络、串口、IMU 和上位机识别观测 |
 | [`download-manifest.md`](download-manifest.md) | 下载来源、文件用途、校验值和确认状态 |
 

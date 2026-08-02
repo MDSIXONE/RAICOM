@@ -12,6 +12,12 @@
 | 摄像头候选 | [`camera/raspberry-pi-camera-module-3/camera-module-3-product-brief.pdf`](camera/raspberry-pi-camera-module-3/camera-module-3-product-brief.pdf) | [Raspberry Pi Camera Module 3 Product Brief](https://datasheets.raspberrypi.com/camera/camera-module-3-product-brief.pdf) | 视觉识别相机的传感器、分辨率、自动对焦、视场角和视频模式参考 | 公开参考 |
 | 下位机 | [`control/esp32/esp32-datasheet-en.pdf`](control/esp32/esp32-datasheet-en.pdf) | [Espressif ESP32 Series Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf) | 复核 ESP32 的电气特性、串口、无线和供电约束 | 公开参考 |
 
+## 课程资源
+
+| 类别 | 本地文件 | 来源 | 主要用途 | 状态 |
+| --- | --- | --- | --- | --- |
+| MAX 课程资源 | [`course-resources/max/课件.zip`](course-resources/max/课件.zip) | [MAX课件资源（语雀）](https://www.yuque.com/lixupeng-rquex/rmgnub/nc9blgmpywi59k0h) | 保存原始课件、示例程序和 YOLO 数据集；需要时再按用途选择性解压 | 公开资料，原始包 |
+
 ## 文件校验
 
 SHA-256 用于确认本地资料未被意外替换。重新下载后如校验值变化，应同时更新下载日期和来源版本说明。
@@ -22,6 +28,7 @@ SHA-256 用于确认本地资料未被意外替换。重新下载后如校验值
 | `compute/horizon-x3/rdk-x3-module-datasheet.pdf` | 1548622 | `D19AA84FB30B9F6B6857CF0F20CCA91F0B566DB9324C772EA4CA0412FCF828B2` |
 | `camera/raspberry-pi-camera-module-3/camera-module-3-product-brief.pdf` | 1244344 | `578EFCAD6337696A29B9C068815A01D63DDCF7BEACF584051D61CF1CDDEEAF0A` |
 | `control/esp32/esp32-datasheet-en.pdf` | 989232 | `6FDFF42CCE00775643335E0CCB1DC1024070BB86208A2C734E9C09675CA3894A` |
+| `course-resources/max/课件.zip` | 91749775 | `00D59076D842D145FB698C142D51EDF449F6A469A803172D4F7BD195F7C84CFA` |
 
 ## 当前不能从规则推断的资料
 
