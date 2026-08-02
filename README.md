@@ -51,8 +51,10 @@
 │   ├── compute/
 │   │   ├── horizon-x3/
 │   │   └── raspberry-pi-cm4/
-│   └── control/
-│       └── esp32/
+│   ├── control/
+│   │   └── esp32/
+│   └── course-resources/
+│       └── max/
 ├── scripts/
 ├── technical-reports/
 ├── tmp/
