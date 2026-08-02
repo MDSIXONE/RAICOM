@@ -1,0 +1,11 @@
+<launch>
+  <arg name="baudrate" default="230400" />
+  <arg name="frame_id" default="laser_frame" />
+  <arg name="test_duration_sec" default="10.0" />
+
+  <node pkg="robot_dog_lidar" type="ydlidar_scan_node" name="ydlidar_scan" output="screen">
+    <param name="baudrate" value="$(arg baudrate)" />
+    <param name="frame_id" value="$(arg frame_id)" />
+    <param name="test_duration_sec" value="$(arg test_duration_sec)" />
+  </node>
+</launch>

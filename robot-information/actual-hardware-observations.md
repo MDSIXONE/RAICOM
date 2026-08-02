@@ -17,23 +17,38 @@
 | 操作系统 | Debian GNU/Linux 12（bookworm） |
 | 内核 | `6.6.62+rpt-rpi-2712`，`aarch64` |
 | CPU | 4 核 ARM Cortex-A76；频率范围 1.5–2.4 GHz；L2 缓存 2 MiB，L3 缓存 2 MiB |
-| 内存 | 4.0 GiB（采集时已用 671 MiB、可用 3.3 GiB） |
+| 内存 | 4.0 GiB（更新采集时已用 890 MiB、可用 3.1 GiB） |
 | Swap | 199 MiB（采集时未使用） |
-| 系统存储 | `mmcblk0`，总容量 29.8 GiB；根分区为 ext4，容量 29 GiB |
-| 根分区空间 | 已用 25 GiB、可用约 3.1 GiB、使用率 89% |
+| 系统存储 | `mmcblk0`，总容量约 59.5 GiB（64 GB 存储卡）；根分区为 ext4，已扩展至 58 GiB |
+| 根分区空间 | 已用 28 GiB、可用约 29 GiB、使用率 50% |
 | 启动分区 | `/boot/firmware`，FAT32，511 MiB；可用约 435 MiB |
-| ROS | 未安装：`rosversion` 不存在、`/opt/ros/` 为空，`ROS_DISTRO` 与 `ROS_VERSION` 均未设置 |
+| 原生 ROS | 未安装：宿主机的 `rosversion` 不存在、`/opt/ros/` 为空；ROS 通过下列 Docker 容器提供 |
 
-根分区使用率已接近 90%。在安装 ROS、下载模型或保存数据集前，应先检查占用并预留足够空间，避免写满系统盘导致服务异常。
+更换并扩展存储卡后，根分区使用率已从约 89% 降至 50%。在下载模型或保存数据集前仍应检查占用，建议为系统更新和容器运行至少保留 10 GiB 可用空间。
 
-### 1.0.1 USB 设备与拓扑（SSH 只读采集）
+### 1.0.1 Docker 与 ROS Noetic 部署（2026-08-02）
+
+| 项目 | 已确认信息 |
+| --- | --- |
+| Docker Engine | `29.7.1` |
+| Docker Compose | `v5.3.1` |
+| ROS 运行环境 | ARM64 的 ROS 1 Noetic；容器内 `ROS_DISTRO=noetic` |
+| 容器 | `ros-noetic`，运行中；重启策略为 `unless-stopped` |
+| 工作区映射 | 宿主机 `/home/pi/ros_ws` 挂载为容器 `/root/catkin_ws` |
+| 网络与进程间通信 | 使用宿主网络与 IPC；未授予特权模式 |
+| Docker 占用 | 镜像约 2.841 GB；运行容器约 86 KiB（不含工作区源码与构建产物） |
+| 已创建功能包 | `robot_dog_bringup` 发布只读系统状态；`robot_dog_lidar` 只发布 `/scan`，不订阅底盘控制话题 |
+
+该功能包依赖 `rospy`、`roscpp` 与 `std_msgs`，已在容器工作区通过 `catkin_make` 构建，并完成 `roslaunch` 启动与状态话题发布验证。手动运行时，需先在容器中依次执行 `source /opt/ros/noetic/setup.bash` 和 `source /root/catkin_ws/devel/setup.bash`，再运行对应 ROS 命令。
+
+### 1.0.2 USB 设备与拓扑（SSH 只读采集）
 
 已发现的非根集线器 USB 外设如下；其余条目均为 Linux 主机控制器的根 Hub。
 
 | 拓扑位置 | 设备 | USB ID | 速率 | Linux 驱动 |
 | --- | --- | --- | --- | --- |
 | Bus 5 / Port 1 | Terminus Technology USB 2.0 Hub | `1a40:0101` | 480 Mb/s | `hub/4p` |
-| Bus 5 / Port 1.1 | Silicon Labs CP2102 USB-to-UART Bridge Controller | `10c4:ea60` | 12 Mb/s | `cp210x` |
+| Bus 5 / Port 1.1 | Silicon Labs CP2102 USB-to-UART Bridge Controller（已确认用于 YDLIDAR） | `10c4:ea60` | 12 Mb/s | `cp210x` |
 
 USB 根 Hub 情况：
 
@@ -41,7 +56,19 @@ USB 根 Hub 情况：
 - Bus 2、Bus 4：`xhci-hcd` USB 3.0 根 Hub，最高 5 Gb/s。
 - Bus 5：`dwc2` USB 2.0 根 Hub，最高 480 Mb/s；当前 Hub 和 CP2102 串口桥均挂载在此总线上。
 
-这表明上位机可见一个 CP2102 串口桥，但尚未仅凭枚举信息确认它对应 ESP32 下位机、机械臂或其他外设；在未识别串口设备节点、波特率和通信协议前，不要向其发送控制字节。
+该 CP2102 已通过机器随附的 YDLIDAR 程序与 ROS 扫描测试确认是二维雷达接口：宿主机设备节点为 `/dev/ttyUSB0`，稳定枚举名为 `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`。ROS 容器只将该节点映射为 `/dev/ydlidar`；底盘使用的 `ttyAMA0` 未映射，也不能作为雷达端口。
+
+### 1.0.3 实机二维雷达验证（2026-08-02）
+
+| 项目 | 已确认信息 |
+| --- | --- |
+| 厂商与型号 | YDLIDAR Tmini Plus（由设备启动时返回的型号信息确认） |
+| 接口与参数 | CP2102 → `/dev/ttyUSB0`；230400 baud；三角测距协议；10 Hz |
+| ROS 话题 | `/scan`，消息类型 `sensor_msgs/LaserScan`，坐标系 `laser_frame` |
+| 验证结果 | 已收到有效范围与强度数组；扫描后设备日志确认已停止 |
+| 安全边界 | 节点端口硬编码为容器内 `/dev/ydlidar`，不能由 launch 参数替换；默认只运行 10 秒并在退出时调用 `turnOff()`、`disconnecting()` |
+
+ROS 容器显式映射当前雷达节点，并以只读方式挂载机器随附的 YDLIDAR SDK 源码。该映射不会自动启动雷达；只有手动启动 `robot_dog_lidar` 的 launch 时才会扫描。若 USB 枚举变化导致宿主机不再提供当前节点，容器中的雷达设备不存在，节点会初始化失败而不会回退到其他串口。
 
 ### 1.1 外观与网络
 
@@ -94,6 +121,7 @@ XGO CM4/CM5 系列的官方架构将屏幕、5MP 摄像头和 AI 识别放在树
 | --- | --- | --- | --- |
 | Wi-Fi 热点 → `10.42.0.1` | 已连通 | 设备控制网络、可能的移动端控制 | 无 HTTP 80 服务；SSH 未确认 |
 | Type-C → `COM3` | 已连通 | ESP32 启动日志、下位机调试 | 不要发送未知命令或刷写固件 |
+| ROS Docker → `/scan` | 已验证 | 获取 YDLIDAR Tmini Plus 二维扫描 | 仅手动启动；默认限时 10 秒；不映射或访问底盘 `ttyAMA0` |
 | HDMI | 待接显示器验证 | 识别并访问可能的上位机桌面/终端 | HDMI 只输出视频，不能代替键盘、鼠标或串口 |
 
 ## 4. 下一步（按风险从低到高）

@@ -17,3 +17,10 @@
 - 停止原因：预推送复核发现该规则遗漏了语音示例中的多行和非标准变量名凭据。
 - 证据：12 份导入文件含硬编码云服务令牌或应用标识。
 - 替代方案或后续动作：在提交前执行覆盖多行赋值、令牌和服务商常见命名的独立扫描，并删除命中文件后重建校验清单。
+
+## 2026-08-02｜通用 Docker Hub 代理拉取 ROS 镜像
+
+- 原方案：先在 Docker 的 `registry-mirrors` 中配置 DaoCloud 并按标准标签拉取；随后使用 DaoCloud、Aityp 和 1ms 的公开代理路径拉取官方 ROS 摘要。
+- 停止原因：三个通用代理均无法持续传输 ROS Noetic 的历史大镜像层；Aityp 另对指定路径要求认证。
+- 证据：Docker 日志连续出现 `Host doesn't match`，各次拉取在数分钟内仅完成极小层；Aityp 返回 `authorization failed: no basic auth credentials`；`/var/lib/docker` 保持约 656 KiB。
+- 替代方案或后续动作：使用华为云公开的、已预同步该镜像 ARM64 变体的专用路径，拉取后按公开的镜像 ID、架构与 ROS 发行版验证。

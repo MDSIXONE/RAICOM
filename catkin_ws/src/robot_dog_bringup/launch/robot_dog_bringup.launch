@@ -1,0 +1,6 @@
+<launch>
+  <arg name="status_rate" default="1.0" />
+  <node pkg="robot_dog_bringup" type="system_status.py" name="system_status" output="screen">
+    <param name="rate" value="$(arg status_rate)" />
+  </node>
+</launch>
