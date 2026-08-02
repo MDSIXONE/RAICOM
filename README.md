@@ -34,7 +34,210 @@
 ```text
 项目根目录/
 ├── archive/
+│   ├── full-device-source/
+│   │   ├── home-pi/
+│   │   │   ├── oumax-xgo/
+│   │   │   └── RaspberryPi-CM5/
+│   │   │       ├── common/
+│   │   │       │   ├── demos/
+│   │   │       │   │   ├── AI_gym/
+│   │   │       │   │   ├── mcp_server/
+│   │   │       │   │   ├── realtime_dialog/
+│   │   │       │   │   ├── sample/
+│   │   │       │   │   ├── src/
+│   │   │       │   │   └── WIFI/
+│   │   │       │   ├── language/
+│   │   │       │   └── volume/
+│   │   │       ├── robots/
+│   │   │       │   ├── Dog_LM/
+│   │   │       │   │   ├── demos/
+│   │   │       │   │   │   ├── face_classification/
+│   │   │       │   │   │   │   └── src/
+│   │   │       │   │   │   │       ├── utils/
+│   │   │       │   │   │   │       └── web/
+│   │   │       │   │   │   ├── follow_person/
+│   │   │       │   │   │   ├── speech/
+│   │   │       │   │   │   │   └── volcengine_binary_demo/
+│   │   │       │   │   │   │       └── protocols/
+│   │   │       │   │   │   ├── xiaozhi_test/
+│   │   │       │   │   │   │   ├── config/
+│   │   │       │   │   │   │   └── src/
+│   │   │       │   │   │   │       ├── audio_codecs/
+│   │   │       │   │   │   │       ├── audio_processing/
+│   │   │       │   │   │   │       ├── constants/
+│   │   │       │   │   │   │       ├── iot/
+│   │   │       │   │   │   │       │   └── things/
+│   │   │       │   │   │   │       ├── network/
+│   │   │       │   │   │   │       └── utils/
+│   │   │       │   │   │   └── YDLidar-SDK/
+│   │   │       │   │   │       ├── core/
+│   │   │       │   │   │       │   ├── base/
+│   │   │       │   │   │       │   ├── common/
+│   │   │       │   │   │       │   ├── json/
+│   │   │       │   │   │       │   ├── math/
+│   │   │       │   │   │       │   ├── network/
+│   │   │       │   │   │       │   └── serial/
+│   │   │       │   │   │       │       └── impl/
+│   │   │       │   │   │       │           ├── unix/
+│   │   │       │   │   │       │           └── windows/
+│   │   │       │   │   │       ├── csharp/
+│   │   │       │   │   │       │   └── examples/
+│   │   │       │   │   │       ├── doc/
+│   │   │       │   │   │       │   ├── FAQs/
+│   │   │       │   │   │       │   ├── howto/
+│   │   │       │   │   │       │   ├── quickstart/
+│   │   │       │   │   │       │   └── tutorials/
+│   │   │       │   │   │       ├── examples/
+│   │   │       │   │   │       ├── python/
+│   │   │       │   │   │       │   ├── examples/
+│   │   │       │   │   │       │   └── test/
+│   │   │       │   │   │       ├── src/
+│   │   │       │   │   │       │   └── filters/
+│   │   │       │   │   │       ├── startup/
+│   │   │       │   │   │       └── test/
+│   │   │       │   │   └── flacksocket/
+│   │   │       │   │       ├── static/
+│   │   │       │   │       └── templates/
+│   │   │       │   ├── Mini3W_W/
+│   │   │       │   │   ├── demos/
+│   │   │       │   │   │   ├── face_classification/
+│   │   │       │   │   │   │   └── src/
+│   │   │       │   │   │   │       ├── utils/
+│   │   │       │   │   │   │       └── web/
+│   │   │       │   │   │   ├── follow_person/
+│   │   │       │   │   │   ├── speech/
+│   │   │       │   │   │   │   └── volcengine_binary_demo/
+│   │   │       │   │   │   │       └── protocols/
+│   │   │       │   │   │   ├── xiaozhi_test/
+│   │   │       │   │   │   │   ├── config/
+│   │   │       │   │   │   │   └── src/
+│   │   │       │   │   │   │       ├── audio_codecs/
+│   │   │       │   │   │   │       ├── audio_processing/
+│   │   │       │   │   │   │       ├── constants/
+│   │   │       │   │   │   │       ├── iot/
+│   │   │       │   │   │   │       │   └── things/
+│   │   │       │   │   │   │       ├── network/
+│   │   │       │   │   │   │       └── utils/
+│   │   │       │   │   │   └── YDLidar-SDK/
+│   │   │       │   │   │       ├── core/
+│   │   │       │   │   │       │   ├── base/
+│   │   │       │   │   │       │   ├── common/
+│   │   │       │   │   │       │   ├── json/
+│   │   │       │   │   │       │   ├── math/
+│   │   │       │   │   │       │   ├── network/
+│   │   │       │   │   │       │   └── serial/
+│   │   │       │   │   │       │       └── impl/
+│   │   │       │   │   │       │           ├── unix/
+│   │   │       │   │   │       │           └── windows/
+│   │   │       │   │   │       ├── csharp/
+│   │   │       │   │   │       │   └── examples/
+│   │   │       │   │   │       ├── doc/
+│   │   │       │   │   │       │   ├── FAQs/
+│   │   │       │   │   │       │   ├── howto/
+│   │   │       │   │   │       │   ├── quickstart/
+│   │   │       │   │   │       │   └── tutorials/
+│   │   │       │   │   │       ├── examples/
+│   │   │       │   │   │       ├── python/
+│   │   │       │   │   │       │   ├── examples/
+│   │   │       │   │   │       │   └── test/
+│   │   │       │   │   │       ├── src/
+│   │   │       │   │   │       │   └── filters/
+│   │   │       │   │   │       ├── startup/
+│   │   │       │   │   │       └── test/
+│   │   │       │   │   └── flacksocket/
+│   │   │       │   │       ├── static/
+│   │   │       │   │       └── templates/
+│   │   │       │   └── Rider_R/
+│   │   │       │       ├── demos/
+│   │   │       │       │   ├── face_classification/
+│   │   │       │       │   │   └── src/
+│   │   │       │       │   │       ├── utils/
+│   │   │       │       │   │       └── web/
+│   │   │       │       │   ├── follow_person/
+│   │   │       │       │   ├── sample/
+│   │   │       │       │   ├── speech/
+│   │   │       │       │   │   └── volcengine_binary_demo/
+│   │   │       │       │   │       └── protocols/
+│   │   │       │       │   └── xiaozhi_test/
+│   │   │       │       │       ├── config/
+│   │   │       │       │       └── src/
+│   │   │       │       │           ├── audio_codecs/
+│   │   │       │       │           ├── audio_processing/
+│   │   │       │       │           ├── constants/
+│   │   │       │       │           ├── iot/
+│   │   │       │       │           │   └── things/
+│   │   │       │       │           ├── network/
+│   │   │       │       │           └── utils/
+│   │   │       │       └── flacksocket/
+│   │   │       │           ├── static/
+│   │   │       │           └── templates/
+│   │   │       └── uiutils/
+│   │   │           └── src/
+│   │   │               └── uiutils/
+│   │   └── systemd/
 │   └── preliminary-code/
+│       ├── oumax-xgo/
+│       └── xgo-cm5/
+│           ├── common/
+│           │   ├── demos/
+│           │   │   ├── AI_gym/
+│           │   │   ├── mcp_server/
+│           │   │   ├── realtime_dialog/
+│           │   │   ├── sample/
+│           │   │   ├── src/
+│           │   │   └── WIFI/
+│           │   ├── language/
+│           │   └── volume/
+│           └── robots/
+│               └── Dog_LM/
+│                   ├── demos/
+│                   │   ├── face_classification/
+│                   │   │   └── src/
+│                   │   │       ├── utils/
+│                   │   │       └── web/
+│                   │   ├── follow_person/
+│                   │   ├── speech/
+│                   │   │   └── volcengine_binary_demo/
+│                   │   │       └── protocols/
+│                   │   ├── xiaozhi_test/
+│                   │   │   ├── config/
+│                   │   │   └── src/
+│                   │   │       ├── audio_codecs/
+│                   │   │       ├── audio_processing/
+│                   │   │       ├── constants/
+│                   │   │       ├── iot/
+│                   │   │       │   └── things/
+│                   │   │       ├── network/
+│                   │   │       └── utils/
+│                   │   └── YDLidar-SDK/
+│                   │       ├── core/
+│                   │       │   ├── base/
+│                   │       │   ├── common/
+│                   │       │   ├── json/
+│                   │       │   ├── math/
+│                   │       │   ├── network/
+│                   │       │   └── serial/
+│                   │       │       └── impl/
+│                   │       │           ├── unix/
+│                   │       │           └── windows/
+│                   │       ├── csharp/
+│                   │       │   └── examples/
+│                   │       ├── doc/
+│                   │       │   ├── FAQs/
+│                   │       │   ├── howto/
+│                   │       │   ├── quickstart/
+│                   │       │   └── tutorials/
+│                   │       ├── examples/
+│                   │       ├── python/
+│                   │       │   ├── examples/
+│                   │       │   └── test/
+│                   │       ├── src/
+│                   │       │   └── filters/
+│                   │       ├── startup/
+│                   │       └── test/
+│                   └── flacksocket/
+│                       ├── static/
+│                       └── templates/
 ├── blender-maps/
 ├── catkin_ws/
 │   └── src/
