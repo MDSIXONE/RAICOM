@@ -258,7 +258,6 @@
 │   ├── camera/
 │   │   └── raspberry-pi-camera-module-3/
 │   ├── compute/
-│   │   ├── horizon-x3/
 │   │   └── raspberry-pi-cm4/
 │   ├── control/
 │   │   └── esp32/
