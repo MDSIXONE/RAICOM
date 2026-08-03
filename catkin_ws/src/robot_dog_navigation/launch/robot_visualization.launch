@@ -1,0 +1,45 @@
+<launch>
+  <!-- Hardware read-only visualization: map and lidar only, no base driver. -->
+  <arg name="map_file" default="$(find robot_dog_navigation)/maps/ricam_arena.yaml"/>
+  <arg name="start_lidar" default="true"/>
+  <arg name="lidar_test_duration_sec" default="0"/>
+
+  <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_file)" output="screen"/>
+
+  <!-- RICAM offline pose used until real localization is integrated. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
+        args="0 0 0 0 0 0 map odom"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base_link"
+        args="-0.70 1.00 0 0 0 0 odom base_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser"
+        args="0.16 0 0.15 0 0 0 base_link laser_frame"/>
+
+  <include if="$(arg start_lidar)" file="$(find robot_dog_lidar)/launch/lidar.launch">
+    <arg name="frame_id" value="laser_frame"/>
+    <arg name="test_duration_sec" value="$(arg lidar_test_duration_sec)"/>
+  </include>
+
+  <node pkg="robot_dog_navigation" type="scan_to_cloud_and_body.py"
+        name="scan_to_cloud_and_body" output="screen">
+    <param name="scan_topic" value="/scan"/>
+    <param name="cloud_topic" value="/lidar_points"/>
+    <param name="body_length" value="0.27"/>
+    <param name="body_width" value="0.16"/>
+    <param name="body_height" value="0.10"/>
+  </node>
+
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <!-- Keep all possible velocity output away from the robot base. -->
+    <remap from="cmd_vel" to="/robot_dog_navigation/disabled_cmd_vel"/>
+    <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>
+    <rosparam file="$(find robot_dog_navigation)/config/global_planner.yaml" command="load"/>
+    <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find robot_dog_navigation)/config/global_costmap.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
+              command="load" ns="local_costmap"/>
+    <rosparam file="$(find robot_dog_navigation)/config/local_costmap.yaml"
+              command="load" ns="local_costmap"/>
+  </node>
+</launch>

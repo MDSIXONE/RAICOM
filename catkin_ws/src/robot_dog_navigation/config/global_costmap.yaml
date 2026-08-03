@@ -1,0 +1,25 @@
+global_frame: map
+robot_base_frame: base_link
+update_frequency: 4.0
+publish_frequency: 2.0
+always_send_full_costmap: true
+transform_tolerance: 0.5
+static_map: true
+rolling_window: false
+resolution: 0.01
+plugins:
+  - {name: static_layer, type: "costmap_2d::StaticLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+# The global costmap reflects the exported RICAM static map.  Live lidar is
+# consumed only by the local costmap because its map alignment is not yet
+# calibrated on the physical robot.
+static_layer:
+  enabled: true
+  map_topic: /map
+  subscribe_to_updates: false
+
+inflation_layer:
+  enabled: true
+  inflation_radius: 0.10
+  cost_scaling_factor: 10.0

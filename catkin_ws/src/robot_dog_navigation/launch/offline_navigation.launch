@@ -1,0 +1,46 @@
+<launch>
+  <!-- This launch file is local-only.  The WSL wrapper fixes ROS_MASTER_URI and
+       ROS_IP to loopback before invoking it. -->
+  <arg name="map_file" default="$(find robot_dog_navigation)/maps/ricam_arena.yaml"/>
+  <arg name="open_rviz" default="true"/>
+
+  <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_file)" output="screen"/>
+
+  <!-- Local safe pose in the latest RICAM map; it leaves clearance for the
+       0.27 m x 0.16 m visual/planning footprint. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
+        args="0 0 0 0 0 0 map odom"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base_link"
+        args="-0.70 1.00 0 0 0 0 odom base_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser"
+        args="0.16 0 0.15 0 0 0 base_link laser_frame"/>
+
+  <node pkg="robot_dog_navigation" type="mock_lidar_publisher.py"
+        name="mock_lidar_publisher" output="screen">
+    <param name="frame_id" value="laser_frame"/>
+    <param name="scan_topic" value="/scan"/>
+    <param name="cloud_topic" value="/lidar_points"/>
+    <param name="rate" value="8.0"/>
+    <param name="body_length" value="0.27"/>
+    <param name="body_width" value="0.16"/>
+    <param name="body_height" value="0.10"/>
+  </node>
+
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>
+    <rosparam file="$(find robot_dog_navigation)/config/global_planner.yaml" command="load"/>
+
+    <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find robot_dog_navigation)/config/global_costmap.yaml"
+              command="load" ns="global_costmap"/>
+
+    <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
+              command="load" ns="local_costmap"/>
+    <rosparam file="$(find robot_dog_navigation)/config/local_costmap.yaml"
+              command="load" ns="local_costmap"/>
+  </node>
+
+  <node if="$(arg open_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find robot_dog_navigation)/rviz/offline_navigation.rviz"/>
+</launch>

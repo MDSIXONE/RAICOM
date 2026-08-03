@@ -1,0 +1,32 @@
+# Use only the official Noetic navigation stack plugins.  /cmd_vel may be
+# published after a 2D Nav Goal, but this offline package has no base driver or
+# hardware subscriber.
+base_global_planner: global_planner/GlobalPlanner
+base_local_planner: base_local_planner/TrajectoryPlannerROS
+
+planner_frequency: 1.0
+controller_frequency: 5.0
+planner_patience: 5.0
+controller_patience: 5.0
+oscillation_timeout: 0.0
+oscillation_distance: 0.20
+shutdown_costmaps: false
+
+recovery_behavior_enabled: false
+clearing_rotation_allowed: false
+
+TrajectoryPlannerROS:
+  holonomic_robot: false
+  acc_lim_x: 0.5
+  acc_lim_theta: 1.0
+  max_vel_x: 0.35
+  min_vel_x: 0.0
+  max_vel_theta: 0.8
+  min_in_place_vel_theta: 0.25
+  escape_vel: 0.0
+  xy_goal_tolerance: 0.20
+  yaw_goal_tolerance: 0.25
+  sim_time: 1.5
+  vx_samples: 8
+  vtheta_samples: 16
+  meter_scoring: true

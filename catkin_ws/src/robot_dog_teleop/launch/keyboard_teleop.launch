@@ -1,0 +1,15 @@
+<launch>
+  <!-- Starts locked and only publishes dry-run requests, never a base command. -->
+  <arg name="command_topic" default="/robot_dog_teleop/requested_cmd"/>
+  <arg name="linear_speed" default="0.05"/>
+  <arg name="angular_speed" default="0.20"/>
+  <arg name="pulse_duration_sec" default="0.20"/>
+
+  <node pkg="robot_dog_teleop" type="keyboard_pulse_teleop.py"
+        name="robot_dog_keyboard_teleop" output="screen" required="true">
+    <param name="command_topic" value="$(arg command_topic)"/>
+    <param name="linear_speed" value="$(arg linear_speed)"/>
+    <param name="angular_speed" value="$(arg angular_speed)"/>
+    <param name="pulse_duration_sec" value="$(arg pulse_duration_sec)"/>
+  </node>
+</launch>

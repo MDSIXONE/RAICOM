@@ -1,0 +1,15 @@
+<launch>
+  <!-- No default: continuous real motion must be explicitly requested. -->
+  <arg name="enable_motion" doc="Set exactly true only after the on-site safety checklist is complete."/>
+  <arg name="linear_motion_value" default="17.0"/>
+  <arg name="yaw_motion_value" default="55.0"/>
+  <arg name="hold_timeout_sec" default="0.25"/>
+
+  <node pkg="robot_dog_teleop" type="physical_keyboard_continuous.py"
+        name="robot_dog_keyboard_continuous" output="screen" required="true">
+    <param name="enable_motion" value="$(arg enable_motion)"/>
+    <param name="linear_motion_value" value="$(arg linear_motion_value)"/>
+    <param name="yaw_motion_value" value="$(arg yaw_motion_value)"/>
+    <param name="hold_timeout_sec" value="$(arg hold_timeout_sec)"/>
+  </node>
+</launch>

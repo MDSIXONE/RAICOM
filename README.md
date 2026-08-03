@@ -248,9 +248,15 @@
 │       ├── robot_dog_bringup/
 │       │   ├── launch/
 │       │   └── scripts/
-│       └── robot_dog_lidar/
+│       ├── robot_dog_lidar/
 │           ├── launch/
 │           └── src/
+│       └── robot_dog_navigation/
+│           ├── config/
+│           ├── launch/
+│           ├── maps/
+│           ├── rviz/
+│           └── scripts/
 ├── competition-rules/
 ├── datasets/
 │   ├── ocr/
@@ -301,21 +307,31 @@
 ```
 <!-- PROJECT_STRUCTURE_TREE:END -->
 
-Blender 地图必须使用本机的 `G:\Blender 5.1` 工具链创建或编辑。WSL 仿真文件位于 `wsl-simulation/`；在默认挂载配置下可通过 `/mnt/g/AICODE/01_PROJECTS/RICAM/wsl-simulation/` 访问。
+Blender 离线场地的可再生成源位于 `blender-maps/offline_navigation_arena.py`；它会生成
+与 ROS 占据栅格地图对应的 `.blend` 场景。当前未在本机找到原先约定的 Blender 工具链，
+因此不提交二进制 `.blend`；安装或找回 Blender 后可按该目录的说明生成。WSL 离线导航
+文件位于 `wsl-simulation/`，当前仓库在 WSL 中的默认路径为
+`/mnt/d/WORK/ALLCODE/RAICOM/`。
 
 原始 YOLO/OCR 数据集通常较大，已默认排除在 Git 提交之外；仅提交数据说明、清单或可公开的小型样例。`robot-information/private/` 用于本机敏感资料，也不会提交。
 
-## 快速开始
+## 本地离线导航（WSL）
 
-安装 ROS Noetic 并配置 Catkin 后，在工作空间根目录执行：
+本机 WSL 已配置 Ubuntu 20.04 + ROS Noetic。下面的流程会在 WSL 自己的 ext4 工作区
+`~/raicom_ws` 构建，源码保持在本仓库；实机雷达包因依赖机器狗容器内的供应商 SDK 而被
+明确排除。
 
 ```bash
-source /opt/ros/noetic/setup.bash
-catkin_make
-source devel/setup.bash
+cd /mnt/d/WORK/ALLCODE/RAICOM
+bash wsl-simulation/setup_offline_navigation.sh
+bash wsl-simulation/start_offline_navigation.sh
 ```
 
-当前尚无可启动的 ROS 节点。加入首个功能包后，请在本节补充构建、启动、仿真和硬件连接命令。
+启动入口强制使用 `ROS_MASTER_URI=http://127.0.0.1:11311`、`ROS_IP=127.0.0.1` 和
+`ROS_LOCALHOST_ONLY=1`；它只启动静态地图、模拟 `/scan` 与 `/lidar_points`、官方
+`move_base + global_planner/GlobalPlanner` 和 RViz，绝不连接或改动 smartcar / 机器狗
+的 ROS Master。RViz 默认显示雷达点云、静态地图和
+`/move_base/global_costmap/costmap`。详情和无界面验收命令见 `wsl-simulation/README.md`。
 
 ## 提交规范
 

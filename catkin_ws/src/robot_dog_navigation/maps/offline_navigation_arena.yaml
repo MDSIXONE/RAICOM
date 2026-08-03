@@ -1,0 +1,6 @@
+image: offline_navigation_arena.pgm
+resolution: 0.4
+origin: [0.0, 0.0, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

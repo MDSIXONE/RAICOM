@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Root-only serial-control handover for the robot dog.  It intentionally never
+# sends a motion request: it only changes which already-known service may own
+# the serial port.
+set -euo pipefail
+
+ORIGINAL_SERVICE="raicom-original-main.service"
+MANUAL_SERVICE="oumax-manual.service"
+CONFLICTING_SERVICES=("oumax-raw-xgo.service" "oumax-manual-control.service")
+SERIAL_DEVICE="/dev/ttyAMA0"
+LOCK_FILE="/run/raicom-control-handover.lock"
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "Another RAICOM control handover is in progress." >&2; exit 1; }
+
+wait_for_serial_release() {
+  local attempt
+  for attempt in $(seq 1 25); do
+    if ! fuser "$SERIAL_DEVICE" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "Serial remains busy: $(fuser "$SERIAL_DEVICE" 2>/dev/null || true)" >&2
+  return 1
+}
+
+wait_for_manual_health() {
+  local attempt health
+  for attempt in $(seq 1 26); do
+    health="$(curl --fail --silent --max-time 0.25 http://127.0.0.1:8765/health 2>/dev/null)" || health=""
+    if [[ "$health" == *'"ok": true'* && "$health" == *'"serial_port": "/dev/ttyAMA0"'* && "$health" == *'"manual_port": 8765'* ]]; then
+      return 0
+    fi
+    if ! systemctl is-active --quiet "$MANUAL_SERVICE"; then
+      return 1
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+require_managed_original() {
+  systemctl is-enabled "$ORIGINAL_SERVICE" >/dev/null 2>&1 || {
+    echo "Original application has not been migrated to $ORIGINAL_SERVICE." >&2
+    exit 2
+  }
+  systemctl is-active --quiet "$ORIGINAL_SERVICE" || {
+    echo "Original application service is not active; refusing a blind handover." >&2
+    exit 2
+  }
+}
+
+reject_conflicting_controls() {
+  local service
+  for service in "${CONFLICTING_SERVICES[@]}"; do
+    if systemctl is-active --quiet "$service"; then
+      echo "Refusing handover: conflicting control service is active: $service" >&2
+      exit 2
+    fi
+  done
+  if systemctl is-active --quiet "$MANUAL_SERVICE"; then
+    echo "Refusing handover: $MANUAL_SERVICE is already active." >&2
+    exit 2
+  fi
+}
+
+restore_original_after_failed_acquire() {
+  systemctl stop "$MANUAL_SERVICE" || true
+  if wait_for_serial_release; then
+    systemctl start "$ORIGINAL_SERVICE" || true
+  else
+    echo "Manual service did not release serial; original application remains stopped." >&2
+  fi
+}
+
+acquire() {
+  require_managed_original
+  reject_conflicting_controls
+  systemctl stop "$ORIGINAL_SERVICE"
+  if ! wait_for_serial_release; then
+    restore_original_after_failed_acquire
+    exit 3
+  fi
+  if ! systemctl start "$MANUAL_SERVICE"; then
+    restore_original_after_failed_acquire
+    exit 4
+  fi
+  if ! systemctl is-active --quiet "$MANUAL_SERVICE"; then
+    restore_original_after_failed_acquire
+    exit 4
+  fi
+  if ! wait_for_manual_health; then
+    restore_original_after_failed_acquire
+    exit 4
+  fi
+  echo "RAICOM control lease acquired. OUMAX manual service is ready; no motion was sent."
+}
+
+release() {
+  # Physical keyboard teleop sends its own stop before this is invoked.  Stop
+  # the manual service before returning ownership to the original application.
+  systemctl stop "$MANUAL_SERVICE" || true
+  if ! wait_for_serial_release; then
+    echo "Manual service did not release serial; original application was not restarted." >&2
+    exit 5
+  fi
+  systemctl start "$ORIGINAL_SERVICE"
+  systemctl is-active --quiet "$ORIGINAL_SERVICE"
+  echo "RAICOM control lease released. Original application restored."
+}
+
+status() {
+  systemctl --no-pager --plain is-active "$ORIGINAL_SERVICE" || true
+  systemctl --no-pager --plain is-active "$MANUAL_SERVICE" || true
+  fuser -v "$SERIAL_DEVICE" 2>&1 || true
+}
+
+case "${1:-}" in
+  acquire) acquire ;;
+  release) release ;;
+  status) status ;;
+  *)
+    echo "Usage: $0 {acquire|release|status}" >&2
+    exit 64
+    ;;
+esac

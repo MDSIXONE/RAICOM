@@ -1,0 +1,15 @@
+<launch>
+  <!-- No default: real motion must be explicitly requested at launch time. -->
+  <arg name="enable_motion" doc="Set exactly true only after the on-site safety checklist is complete."/>
+  <arg name="pulse_duration_sec" default="0.20"/>
+  <arg name="linear_motion_value" default="17.0"/>
+  <arg name="yaw_motion_value" default="55.0"/>
+
+  <node pkg="robot_dog_teleop" type="physical_keyboard_teleop.py"
+        name="robot_dog_keyboard_teleop" output="screen" required="true">
+    <param name="enable_motion" value="$(arg enable_motion)"/>
+    <param name="pulse_duration_sec" value="$(arg pulse_duration_sec)"/>
+    <param name="linear_motion_value" value="$(arg linear_motion_value)"/>
+    <param name="yaw_motion_value" value="$(arg yaw_motion_value)"/>
+  </node>
+</launch>

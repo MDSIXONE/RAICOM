@@ -1,0 +1,5 @@
+# Shared geometry only.  Global and local update/plugin parameters live in
+# their respective files so the two costmaps can be tuned independently.
+# Match the RViz body placeholder: 0.27 m long by 0.16 m wide.
+footprint: [[0.135, 0.08], [0.135, -0.08], [-0.135, -0.08], [-0.135, 0.08]]
+footprint_padding: 0.01

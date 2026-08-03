@@ -1,0 +1,134 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Static Map1
+        - /Global Costmap1
+        - /Local Costmap (1m x 1m)1
+        - /Lidar Point Cloud1
+      Splitter Ratio: 0.5
+    Tree Height: 650
+  - Class: rviz/Selection
+    Name: Selection
+  - Class: rviz/Tool Properties
+    Expanded:
+      - /2D Nav Goal1
+    Name: Tool Properties
+    Splitter Ratio: 0.588679
+  - Class: rviz/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Name: Time
+    SyncSource: ""
+    SyncMode: 0
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz/Map
+      Color Scheme: map
+      Draw Behind: true
+      Enabled: true
+      Name: Static Map
+      Topic: /map
+      Value: true
+    - Alpha: 0.72
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic: /move_base/global_costmap/costmap
+      Value: true
+    - Alpha: 0.72
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap (1m x 1m)
+      Topic: /move_base/local_costmap/costmap
+      Value: true
+    - Class: rviz/PointCloud2
+      Color: 255; 120; 0
+      Enabled: true
+      Name: Lidar Point Cloud
+      Queue Size: 10
+      Size (m): 0.045
+      Style: Points
+      Topic: /lidar_points
+      Value: true
+    - Class: rviz/LaserScan
+      Color: 0; 255; 120
+      Decay Time: 0.2
+      Enabled: true
+      Name: Lidar Scan
+      Queue Size: 10
+      Size (Pixels): 3
+      Style: Points
+      Topic: /scan
+      Value: true
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Marker Alpha: 0.9
+      Marker Scale: 0.45
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /robot_body_marker
+      Name: Robot Body (0.27m x 0.16m)
+      Queue Size: 10
+      Value: true
+    - Alpha: 1
+      Class: rviz/Path
+      Color: 0; 90; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Global Plan
+      Topic: /move_base/GlobalPlanner/plan
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+      Topic: /initialpose
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Views:
+    Current:
+      Class: rviz/TopDownOrtho
+      Name: Top Down Ortho
+      Scale: 4
+      Target Frame: map
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 920
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000400000000000001560000034efc0200000008fb000000100044006900730070006c006100790073010000003d0000034e000000c900fffffffb0000001200530065006c0065006300740069006f006e00000000000001000000000000fffffffb0000001a0054006f006f006c002000500072006f00700065007200740069006500730100000106000000df000000a400fffffffb0000000a0056006900650077007301000001eb000001a0000000a400fffffffb0000000a00540069006d00650100000391000000bd0000000000000003000003b0000000b5fc0100000001fb000000100049006d0061006700650020005600690065007700000000000003b0000000000000000000000000
+  Width: 1440
+  X: 80
+  Y: 60

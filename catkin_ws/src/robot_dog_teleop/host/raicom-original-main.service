@@ -1,0 +1,23 @@
+[Unit]
+Description=RAICOM managed original XGO main application
+After=network-online.target
+Wants=network-online.target
+Conflicts=oumax-manual.service oumax-manual-control.service oumax-raw-xgo.service
+Before=oumax-manual.service oumax-manual-control.service oumax-raw-xgo.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/RaspberryPi-CM5
+Environment=PYTHONUNBUFFERED=1
+Environment=VIRTUAL_ENV=/home/pi/RaspberryPi-CM5/xgovenv
+Environment=PATH=/home/pi/RaspberryPi-CM5/xgovenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/pi/RaspberryPi-CM5/xgovenv/bin/python /home/pi/RaspberryPi-CM5/common/main.py
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

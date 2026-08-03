@@ -1,0 +1,34 @@
+global_frame: odom
+robot_base_frame: base_link
+update_frequency: 8.0
+publish_frequency: 8.0
+always_send_full_costmap: true
+transform_tolerance: 0.5
+static_map: false
+rolling_window: true
+width: 1.0
+height: 1.0
+resolution: 0.01
+track_unknown_space: false
+plugins:
+  - {name: obstacle_layer, type: "costmap_2d::ObstacleLayer"}
+  - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+# Only this 1 m x 1 m rolling window incorporates unregistered physical lidar.
+obstacle_layer:
+  enabled: true
+  obstacle_range: 0.50
+  raytrace_range: 0.60
+  observation_sources: scan
+  scan:
+    sensor_frame: laser_frame
+    data_type: LaserScan
+    topic: /scan
+    marking: true
+    clearing: true
+    inf_is_valid: false
+
+inflation_layer:
+  enabled: true
+  inflation_radius: 0.10
+  cost_scaling_factor: 10.0
