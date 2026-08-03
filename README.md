@@ -249,13 +249,17 @@
 │       │   ├── launch/
 │       │   └── scripts/
 │       ├── robot_dog_lidar/
+│       │   ├── launch/
+│       │   └── src/
+│       ├── robot_dog_navigation/
+│       │   ├── config/
+│       │   ├── launch/
+│       │   ├── maps/
+│       │   ├── rviz/
+│       │   └── scripts/
+│       └── robot_dog_teleop/
+│           ├── host/
 │           ├── launch/
-│           └── src/
-│       └── robot_dog_navigation/
-│           ├── config/
-│           ├── launch/
-│           ├── maps/
-│           ├── rviz/
 │           └── scripts/
 ├── competition-rules/
 ├── datasets/
