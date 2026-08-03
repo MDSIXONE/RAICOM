@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="ricam_arena">
+    <gravity>0 0 -9.8</gravity>
+    <physics type="ode">
+      <real_time_update_rate>300</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+    </physics>
+
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <model name="arena_visual">
+      <static>true</static>
+      <link name="visual_link">
+        <visual name="arena_mesh">
+          <geometry>
+            <mesh><uri>model://ricam_arena_sim/meshes/ricam_arena.obj</uri></mesh>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <model name="arena_collisions">
+      <static>true</static>
+      <link name="collision_link">
+        <collision name="floor">
+          <pose>0 0 -0.02 0 0 0</pose>
+          <geometry><box><size>3.0 2.5 0.04</size></box></geometry>
+        </collision>
+        <collision name="north_wall">
+          <pose>0 1.225 0.15 0 0 0</pose>
+          <geometry><box><size>3.0 0.05 0.30</size></box></geometry>
+        </collision>
+        <collision name="south_wall">
+          <pose>0 -1.225 0.15 0 0 0</pose>
+          <geometry><box><size>3.0 0.05 0.30</size></box></geometry>
+        </collision>
+        <collision name="west_wall">
+          <pose>-1.475 0 0.15 0 0 0</pose>
+          <geometry><box><size>0.05 2.5 0.30</size></box></geometry>
+        </collision>
+        <collision name="east_wall">
+          <pose>1.475 0 0.15 0 0 0</pose>
+          <geometry><box><size>0.05 2.5 0.30</size></box></geometry>
+        </collision>
+        <collision name="manual_side_box">
+          <pose>-1.273845 0.068412 0.145220 0 0 0</pose>
+          <geometry><box><size>0.349632 1.656391 0.290440</size></box></geometry>
+        </collision>
+        <collision name="kt_box_1">
+          <pose>0.694172 0.40 0.15 0 0 0</pose>
+          <geometry><box><size>0.30 0.30 0.30</size></box></geometry>
+        </collision>
+        <collision name="kt_box_2">
+          <pose>0.954366 -0.40 0.15 0 0 0</pose>
+          <geometry><box><size>0.30 0.30 0.30</size></box></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <gui fullscreen="false">
+      <camera name="overview">
+        <pose>0 -0.3 4.6 0 1.5708 1.5708</pose>
+        <view_controller>orbit</view_controller>
+      </camera>
+    </gui>
+  </world>
+</sdf>

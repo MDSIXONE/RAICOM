@@ -1,0 +1,23 @@
+# Safe overrides for the 3.0 m x 2.5 m RICAM arena and Mini2 model.
+CymPlanner:
+  base_link_frame: base_link
+  scan_topic: /scan
+  navigation_mode: main_legacy
+
+  max_vel_x: 0.40
+  max_vel_theta: 1.00
+  final_yaw_max_vel: 1.00
+
+  main_legacy_linear_x_gain: 2.0
+  main_legacy_linear_x_kd: 0.02
+  main_legacy_angular_gain: 3.0
+  main_legacy_max_vel_x: 0.40
+  main_legacy_max_vel_theta: 1.00
+  main_legacy_final_yaw_gain: 2.0
+  main_legacy_final_yaw_max_vel: 1.00
+  main_legacy_final_linear_x_gain: 1.0
+
+  scan_timeout: 0.40
+  scan_min_range: 0.03
+  scan_max_range: 3.0
+  carry_speed_scale: 1.0

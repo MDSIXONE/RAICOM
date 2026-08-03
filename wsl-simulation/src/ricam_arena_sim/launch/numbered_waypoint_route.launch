@@ -1,0 +1,31 @@
+<launch>
+  <arg name="point_numbers" default="[91, 711, 694]"/>
+  <arg name="preflight" default="true"/>
+  <arg name="goal_timeout_sim_sec" default="120.0"/>
+
+  <node name="numbered_waypoint_navigation"
+        pkg="ricam_arena_sim"
+        type="navigate_numbered_waypoints.py"
+        output="screen"
+        required="false">
+    <rosparam param="point_numbers" subst_value="true">$(arg point_numbers)</rosparam>
+    <rosparam param="via_point_numbers">
+      "91-&gt;711": [400, 392, 640]
+      "711-&gt;694": [741, 708, 702]
+    </rosparam>
+    <param name="frame_id" value="map"/>
+    <param name="base_frame" value="base_link"/>
+    <param name="expected_global_planner" value="navfn/NavfnROS"/>
+    <param name="expected_local_planner" value="cym_planner/CymPlanner"/>
+    <param name="require_expected_planners" value="true"/>
+    <param name="preflight" value="$(arg preflight)"/>
+    <param name="plan_tolerance_m" value="0.05"/>
+    <param name="goal_timeout_sim_sec" value="$(arg goal_timeout_sim_sec)"/>
+    <param name="pass_through_intermediate" value="true"/>
+    <param name="waypoint_position_tolerance_m" value="0.12"/>
+    <param name="via_position_tolerance_m" value="0.06"/>
+    <rosparam param="position_tolerance_overrides">
+      "741": 0.11
+    </rosparam>
+  </node>
+</launch>
