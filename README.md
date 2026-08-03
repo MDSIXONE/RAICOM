@@ -239,6 +239,10 @@
 │                       ├── static/
 │                       └── templates/
 ├── blender-maps/
+│   └── ricam_arena/
+│       ├── blender/
+│       ├── gazebo/
+│       └── navigation/
 ├── catkin_ws/
 │   └── src/
 │       ├── robot_dog_bringup/
@@ -267,6 +271,33 @@
 ├── technical-reports/
 ├── tmp/
 └── wsl-simulation/
+    └── src/
+        ├── cym_planner/
+        │   ├── config/
+        │   ├── include/
+        │   │   └── cym_planner/
+        │   ├── src/
+        │   └── test/
+        ├── mini2_description/
+        │   ├── config/
+        │   ├── launch/
+        │   ├── meshes/
+        │   ├── scripts/
+        │   ├── test/
+        │   └── urdf/
+        ├── ricam_arena_sim/
+        │   ├── config/
+        │   ├── launch/
+        │   ├── maps/
+        │   ├── meshes/
+        │   ├── rviz/
+        │   ├── scripts/
+        │   ├── test/
+        │   └── worlds/
+        └── ricam_dataset_capture/
+            ├── launch/
+            ├── scripts/
+            └── test/
 ```
 <!-- PROJECT_STRUCTURE_TREE:END -->
 
