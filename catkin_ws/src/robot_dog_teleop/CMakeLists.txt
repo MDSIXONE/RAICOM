@@ -12,6 +12,7 @@ catkin_install_python(PROGRAMS
   scripts/keyboard_pulse_teleop.py
   scripts/physical_keyboard_teleop.py
   scripts/physical_keyboard_continuous.py
+  scripts/arm_keyboard_teleop.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

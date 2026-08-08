@@ -2,6 +2,69 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-08｜gmapping 键盘建图与实机地图切换
+
+- 状态：改动完成
+- 目标：在实机上用键盘控制机器狗行走，通过 gmapping 实时建图并保存地图，供导航模式加载使用；修复建图不出图与里程计位移不更新的问题。
+- 影响文件：`catkin_ws/src/robot_dog_navigation/scripts/{laser_frame_tf.py,simple_odom.py,scan_circle_filter.py}`、`catkin_ws/src/robot_dog_navigation/maps/ricam_arena_mapped.{pgm,yaml}`（新增）、`catkin_ws/src/robot_dog_teleop/scripts/mapping_keyboard_teleop.py`（新增）、`catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`、`docs/ai-records/{CHANGE_LOG,MISTAKE_LOG}.md`、`docs/local-rviz-navigation-quickstart.md`。
+- 实施记录：容器安装 `ros-noetic-slam-gmapping`（可执行文件在 `gmapping` 包而非 `slam_gmapping` 空 wrapper，launch 必须 `pkg="gmapping" type="slam_gmapping"`）；`robot_dog_main.launch` 新增 `enable_mapping` arg（true 时停 map_server/move_base 并起 slam_gmapping，false 时原导航模式）；新增 `laser_frame_tf.py` 把 base_link→laser_frame 静态 TF 改为动态发布（gmapping 用 tf1 不读 /tf_static，这是实机“只有首图”的决定性根因）；新增 `mapping_keyboard_teleop.py` 键盘建图脚本（w/s 前后、a/d 转向、按住持续 10Hz 发布 /cmd_vel，走桥接→simple_odom 保证建图 odom 正确）；`simple_odom` 加固（yaw 毛刺限幅 0.4rad、静止冻结、位移限幅）并把初始位姿改为 launch 的 init_x/init_y arg（建图模式 0,0 对齐机器起点）；修复 `simple_odom` d_max 位移限幅 0.02→0.10（foot 步速 0.3~0.8m/s 时原限幅每帧清零导致 rviz 车体只转不走）。
+- 验证：实机键盘建图成功，保存 `ricam_arena_mapped.pgm/yaml`（1408×1344 @ 0.02m/pix，origin [-13.66,-14.06]）；切回导航模式 `/map` 加载新建图、move_base 恢复、无 transform 超时；gmapping 本地对照实验全链路跑通（动态 TF + 0.2s scan 时间戳偏移后 /map 持续更新）；d_max 修复仅本地 py_compile 通过，实机验证待下次开机。
+- 遗留风险：d_max=0.10 修复尚未实机验证（机器关机）；simple_odom 无真实里程计，重启后需对齐起点；建图地图原点按建图起点 (0,0) 对齐，导航模式下机器实际起点需用 init_x/init_y 与地图匹配；AMCL 闭环定位未实施（待装 ros-noetic-amcl）。
+
+## 2026-08-08｜主流程集成：球检测、里程计、运动桥接与雷达滤波
+
+- 状态：改动完成
+- 目标：把 2D Nav Goal 选点、cym_planner 导航、OUMAX 运动控制、球检测画面与雷达滤波整合为本地 rviz + 实机主流程的端到端闭环。
+- 影响文件：`catkin_ws/src/robot_dog_navigation/scripts/{simple_odom.py,scan_circle_filter.py}`、`catkin_ws/src/robot_dog_teleop/scripts/oumax_cmd_vel_bridge.py`、`catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`、`wsl-simulation/src/ball_spotter/{scripts/ball_detector_node.py,launch/local_control.launch}`、`wsl-simulation/src/ricam_dataset_capture/scripts/mjpeg_bridge.py`、`host-services/oumax-xgo/manual_control_server.py`（新增 `/imu` 只读接口、Timer 看门狗运动语义、wheel4 差速混合）、`catkin_ws/src/cym_planner/config/cym_planner_params.json`、`wsl-simulation/start_local_control.sh`、WSL 侧 `/root/fix_shm.sh` 与 `/etc/wsl.conf`。
+- 实施记录：本地球检测节点（YOLO 画框发布 `/ball_detector/image`）；`/cmd_vel`→OUMAX HTTP 桥接（yaw 优先、watchdog 急停、步进线性映射避开固件死区）；`simple_odom` 里程计（cmd_vel 积分 + IMU yaw 融合，替代原静态 odom→base_link TF）；雷达滤波（前方机械臂扇形 ±20°/1.0m 后改为圆心 (0,0) 半径 0.45m 全向滤除站立姿态自身遮挡）；OUMAX 手控服务增加 `/imu` 接口与 Timer 看门狗（turn/move_x 立即返回，runtime 后自动停）；WSLg 窗口修复（boot.command 预挂载 tmpfs 到 /mnt/shared_memory）；IP 迁移至 192.168.137.232。
+- 验证：球检测 3 球全检出（red 0.92/blue 0.90/green 0.87）；/odom 10 Hz 且 yaw 随 IMU 变化；/imu 返回 `{"ok":true,"yaw":5.61,...}`；自身遮挡滤波后 <0.45m 点 = 0；WSL 发 goal 到容器 move_base 成功（需 export ROS_IP=192.168.137.232）；**导航闭环 SUCCEEDED：goal (-0.20,1.00) 10s 到达，最终 odom (-0.218,0.961) 误差 ~4cm**；foot 模式转向死区确认（yaw<12 不动，15→21°/s、30→36°/s）。
+- 遗留风险：simple_odom 重启后重置 init (-0.70,1.00) 但机器物理位置可能已移动——odom 绝对位置不闭合（无闭环定位），比赛需重新对齐起点；XGO 固件 yaw 步进死区 <12，小误差角修正依赖 cym final_yaw 逻辑（tolerance 0.08rad）；机器仅左侧两轮有驱动（右侧无刷被动），foot 模式为唯一可靠运动模式，wheel 模式转向打滑不可用；机器人侧 C++ 节点 master 掉线后不自动重连。
+
+## 2026-08-05｜接入独立发布版 CymPlanner 局部规划器
+
+- 状态：改动完成
+- 目标：把 `tmp/cym_planner_standalone_20260713.zip` 中的独立发布版 `cym_planner` 源码包接入本仓库源码，替换离线演示原有的 `TrajectoryPlannerROS` 局部规划器；规划器内部的 OpenCV 窗口改为把全部可视化图像发布为 ROS 话题，供 rosmaster 上的 RViz 直接订阅。
+- 影响文件：`catkin_ws/src/cym_planner/`（新增包）、`catkin_ws/src/robot_dog_navigation/{config/move_base.yaml,launch/offline_navigation.launch,launch/robot_visualization.launch,rviz/offline_navigation.rviz,README.md}`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：把独立包源码复制到 `catkin_ws/src/cym_planner`，`cym_planner_params.json` 由 GB18030 转为 UTF-8，插件描述乱码修正；`cym_planner.h/.cpp` 移除 `cv::namedWindow/imshow/resizeWindow/waitKey`，新增 `sensor_msgs/Image` 发布器（`/cym_planner/map_image` 为代价地图与路径叠加图、放大 5 倍；`/cym_planner/plan_image` 为车体系 600×600 路径俯视图，话题名可由 `~/map_image_topic`、`~/plan_image_topic` 覆盖）；`package.xml` 与 `CMakeLists.txt` 增加 `sensor_msgs` 依赖。`move_base.yaml` 的 `base_local_planner` 改为 `cym_planner/CymPlanner`，两个 launch 均加载 `cym_planner_params.json`，RViz 配置新增两张 `rviz/Image` 显示。
+- 验证：package/plugin/launch XML 均通过 XML 解析；参数文件按 YAML 解析成功且顶层键为 `CymPlanner`；修改后的源码无 `namedWindow/imshow/waitKey/highgui` 残留；离线与实机 launch 均能找到并加载参数文件。已部署至机器狗 `ros-noetic` 容器；安装 OpenCV 4.2 后，`catkin_make --pkg cym_planner robot_dog_navigation robot_dog_yolo_dataset` 成功，CymPlanner 插件可被 `nav_core` 发现，导航 launch 静态解析通过；未启动 `move_base` 或底盘控制。
+- 遗留风险：该插件参数为 SmartCar 车体标定值（如 `max_vel_x: 14.0`、`max_vel_theta: 20.5`），远超机器狗安全速度；离线演示无 `/cmd_vel` 订阅者且实机 launch 已把 `cmd_vel` 重映射到禁用话题，但在接入真实底盘前必须按机器狗重新标定速度与增益，并验证避障与终点对准行为。
+
+## 2026-08-05｜雷达正前方圆形区域过滤节点
+
+- 状态：改动完成
+- 目标：新增只读过滤节点，把 `/scan` 中雷达正前方 15 cm 处、半径 15 cm 圆形区域内的点置为 `inf`，用于屏蔽安装在雷达前方的机械臂；不访问底盘或雷达串口。
+- 影响文件：`catkin_ws/src/robot_dog_navigation/{scripts/scan_circle_filter.py,launch/scan_circle_filter.launch,CMakeLists.txt}`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：新增 Python3 节点订阅 `/scan` 发布 `/scan_filtered`，逐点把笛卡尔坐标落入以 `(center_x=0.15, center_y=0.0)` 为圆心、`radius=0.15` 的圆内的点置为 `inf` 并清零强度，其余字段原样透传；圆心与半径均可由 launch 参数覆盖，半径拒绝负值。新增配套 launch 与 `catkin_install_python` 安装声明。
+- 验证：Python 语法检查通过；圆形判定断言覆盖圆心点、圆内近/远端、圆外侧方/后方/紧邻雷达点，均符合预期；Git 空白检查通过。已随导航包部署至机器狗，在 Noetic 容器构建成功，`scan_circle_filter.launch --nodes` 静态解析通过；未启动过滤节点或雷达。
+- 遗留风险：圆位置按雷达坐标系（`laser_frame`）定义，机械臂若不在雷达扫描平面内则无需过滤；costmap 需将 `scan` 的 `topic` 改为 `/scan_filtered` 才能生效。
+
+## 2026-08-05｜YOLO 相机训练集采集功能包
+
+- 状态：改动完成
+- 目标：新增独立 ROS 功能包，通过 USB 相机每 0.5 秒采集一张图片，共采集 600 张，供后续 YOLO 训练标注使用。
+- 影响文件：`catkin_ws/src/robot_dog_yolo_dataset/`、`docs/ai-records/{CHANGE_LOG,MISTAKE_LOG}.md`。
+- 实施记录：新增 OpenCV 相机采集节点、默认参数 launch 文件和使用说明；默认以单调时钟每 0.5 秒保存一次，文件连续编号至 600 张。节点不订阅或发布底盘控制话题；中断时释放相机，连续 20 次读取失败时退出。
+- 验证：独立审查确认默认采集数量与间隔、定时逻辑、Catkin 安装声明和 launch 参数；本地 Python 语法、launch/package XML、默认值/关键错误路径断言与 Git 空白检查均通过。已部署至机器狗 Noetic 容器，容器已安装 Python OpenCV 4.2 并映射 `/dev/video0`，Catkin 构建与 `yolo_image_collector.launch --nodes` 静态解析通过；未启动相机或写入训练图片。
+- 遗留风险：目标机器尚未连接相机；OpenCV、相机设备号和 Linux 脚本执行权限需在部署时确认，采集结束后仍需人工完成 YOLO 标注。
+
+## 2026-08-05｜机械臂键盘控制接入
+
+- 状态：改动完成
+- 目标：新增机械臂键盘控制节点，通过 OUMAX 手控服务 `kind=arm` 接口（`cartesian`、`claw`、`mid`）逐步控制 XGO 机械臂，并沿用运动键盘的 `u→y` 双确认与急停模式。
+- 影响文件：`catkin_ws/src/robot_dog_teleop/{scripts/arm_keyboard_teleop.py,launch/arm_keyboard_teleop.launch,host/launch_arm_keyboard_teleop.sh,CMakeLists.txt,README.md}`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`w/s` 步进 x 前伸/收回、`a/d` 步进 z 降低/升高、`q/e` 夹爪开合、`m` 回中（默认 home x=80、z=60，与手控服务默认一致）；步长默认 10（范围 1–20）、夹爪步长 10（范围 1–40），客户端在 0–255 内钳制并本地跟踪姿态作为步进基准。`enable_motion:=true` 才允许真实运动；`verify_identity` 校验与运动键盘一致；空格/x 锁定、Ctrl-C 第一次锁定第二次退出。机械臂命令为点目标，无持续运动，无需看门狗。
+- 验证：Python 语法检查通过；启动脚本与 launch XML 与既有物理键盘模式逐段比对一致；host 启动器沿用 `raicom-control-handover acquire/release` 包裹。未上传、未启动、未发送任何串口或 HTTP 命令。
+- 遗留风险：本地跟踪姿态与机械臂真实姿态可能漂移（若曾被其他程序移动），首次使用须先按 `m` 回中；首次实机测试须净空 1 m 并仅验证一次回中行为；`raicom-launch-arm-keyboard` 需要安装后在机器端部署脚本。
+
+## 2026-08-05｜键盘 Ctrl-C 双次退出修复
+
+- 状态：改动完成
+- 目标：修复 `tty.setraw()` 下 Ctrl-C 只停止运动、无法退出键盘控制进程的问题；第一次 Ctrl-C 保持紧急停止，第二次退出程序。
+- 影响文件：`catkin_ws/src/robot_dog_teleop/scripts/{keyboard_pulse_teleop.py,physical_keyboard_teleop.py,physical_keyboard_continuous.py}`、`docs/ai-records/{CHANGE_LOG,MISTAKE_LOG}.md`。
+- 实施记录：raw 模式关闭 ISIG，Ctrl-C 以字节 `\x03` 到达；原处理分支只调用 `_lock_and_stop` 且循环不退出。三个脚本均新增 `_ctrl_c_exit_armed` 标志：第一次 `\x03` 紧急停止并提示，第二次 `\x03` 跳出循环，`finally` 恢复终端并发送停止。空格/x 行为不变。
+- 验证：三个脚本 Python 语法检查通过；改动经逐一复核，break 位于 `try/finally` 内，终端设置必然恢复。
+- 遗留风险：无；行为变更已在启动提示与帮助文本中说明。
+
 ## 模板：YYYY-MM-DD｜改动标题
 
 - 状态：进行中

@@ -16,6 +16,7 @@ catkin_package(
 
 catkin_install_python(PROGRAMS
   scripts/mock_lidar_publisher.py
+  scripts/scan_circle_filter.py
   scripts/scan_to_cloud_and_body.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

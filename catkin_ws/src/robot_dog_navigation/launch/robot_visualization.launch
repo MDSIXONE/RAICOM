@@ -32,6 +32,7 @@
     <!-- Keep all possible velocity output away from the robot base. -->
     <remap from="cmd_vel" to="/robot_dog_navigation/disabled_cmd_vel"/>
     <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>
+    <rosparam file="$(find cym_planner)/config/cym_planner_params.json" command="load"/>
     <rosparam file="$(find robot_dog_navigation)/config/global_planner.yaml" command="load"/>
     <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
               command="load" ns="global_costmap"/>

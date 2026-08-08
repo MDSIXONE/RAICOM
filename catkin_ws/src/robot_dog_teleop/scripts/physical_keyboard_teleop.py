@@ -90,6 +90,7 @@ class PhysicalKeyboardTeleop:
         self._client.verify_identity()
         self._armed = False
         self._arm_requested_until = 0.0
+        self._ctrl_c_exit_armed = False
         self._stop_timer = None
         self._pulse_id = 0
         self._pulse_active = False
@@ -207,14 +208,21 @@ class PhysicalKeyboardTeleop:
         if not sys.stdin.isatty():
             raise RuntimeError("physical keyboard teleop requires an interactive terminal")
         settings = termios.tcgetattr(sys.stdin)
-        print("REAL keyboard teleop is LOCKED. Press u, then y to arm; space/x/Ctrl-C stop and lock.")
+        print("REAL keyboard teleop is LOCKED. Press u, then y to arm; space/x stop and lock; Ctrl-C stops, twice to exit.")
         try:
             tty.setraw(sys.stdin.fileno())
             while not rospy.is_shutdown():
                 key = self._read_key()
                 if not key:
                     continue
-                if key in ("\x03", " ", "x"):
+                if key == "\x03":
+                    self._lock_and_stop("emergency stop")
+                    if self._ctrl_c_exit_armed:
+                        print("Ctrl-C pressed twice: exiting keyboard teleop.")
+                        break
+                    self._ctrl_c_exit_armed = True
+                    print("Emergency stop sent. Press Ctrl-C again to exit the program.")
+                elif key in (" ", "x"):
                     self._lock_and_stop("emergency stop")
                 elif key == "u":
                     self._request_arm()
@@ -223,7 +231,7 @@ class PhysicalKeyboardTeleop:
                 elif key in bindings:
                     self._pulse(*bindings[key])
                 else:
-                    print("Keys: u then y arm; w/s forward/reverse; a/d turn; space/x/Ctrl-C stop and lock.")
+                    print("Keys: u then y arm; w/s forward/reverse; a/d turn; space/x stop and lock; Ctrl-C stops, twice to exit.")
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
             self._lock_and_stop("node exit")

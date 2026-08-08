@@ -22,6 +22,30 @@ roslaunch robot_dog_teleop keyboard_teleop.launch
 不要将请求话题直接重映射到 `/cmd_vel`，也不要与当前
 `robot_visualization.launch` 的隔离速度话题混淆。
 
+## 进入 ROS Docker 容器
+
+机器狗的 ROS Noetic 安装在名为 `ros-noetic` 的 Docker 容器中；SSH 登录后的
+`pi@pi` 提示符仍是**宿主机**，不能直接执行 `source /opt/ros/noetic/setup.bash`。
+
+```bash
+# 宿主机：先确认容器正在运行
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 宿主机：进入 ROS 容器（终端提示符会变为 root@...）
+docker exec -it ros-noetic bash
+
+# 容器内：加载 ROS 与当前工作区
+source /opt/ros/noetic/setup.bash
+source /root/catkin_ws/devel/setup.bash
+```
+
+容器内源码路径是 `/root/catkin_ws/src/robot_dog_teleop`，它对应宿主机的
+`/home/pi/ros_ws/src/robot_dog_teleop`。输入 `exit` 返回宿主机。
+
+`sudo /usr/local/sbin/raicom-launch-physical-keyboard` 和
+`sudo /usr/local/sbin/raicom-launch-physical-keyboard-continuous` 必须在**宿主机**运行，
+不能在容器内运行；这两个启动器负责在启动 ROS 节点前安全切换原厂程序与手控服务。
+
 ## 真实控制桥接
 
 机器上已有的 `oumax-manual.service` 独占 `/dev/ttyAMA0`，并在本机
@@ -88,3 +112,29 @@ sudo /usr/local/sbin/raicom-launch-physical-keyboard-continuous
 按住 `a/d` 原地转向。方向键的重复键会最多以 10 Hz 刷新，松键后重复键停止，随即触发上述
 超时停止；少数终端的重复键延迟可能让动作不连续。空格、`x`、Ctrl-C 始终立即停止并锁定。
 首次使用只在净空场地短暂轻按每个方向，确认停止、方向和实体急停后再连续控制。
+
+## 机械臂键盘控制（部署后使用）
+
+机械臂控制通过 OUMAX 手控服务的 `kind=arm` 接口完成，与运动键盘控制共用
+`u`、`y` 双确认安全模式。机械臂接口接收 0–255 的笛卡尔目标点（`x` 前后、`z` 升降），
+每次按键只移动一个有界步长，机械臂保持最近一次目标点；不存在持续运动，也不需要看门狗。
+
+```bash
+sudo /usr/local/sbin/raicom-launch-arm-keyboard
+```
+
+出现 `ARM keyboard teleop is LOCKED` 后，先按 `u`、再按 `y`：
+
+| 按键 | 动作 |
+| --- | --- |
+| `w` / `s` | 机械臂 `x` 前伸 / 收回一个步长 |
+| `a` / `d` | 机械臂 `z` 降低 / 升高一个步长 |
+| `q` / `e` | 夹爪张开 / 合拢一个步长 |
+| `m` | 机械臂回到中间位置（默认 x=80、z=60） |
+| 空格 / `x` | 锁定（机械臂保持当前姿态，不再接收新目标） |
+| Ctrl-C | 第一次锁定，第二次退出程序 |
+
+默认步长为 10（范围 1–20），夹爪步长 10（范围 1–40），均可在 launch 时用
+`arm_step`、`claw_step` 覆盖；`home_x`、`home_z` 可覆盖中间位置。键盘端会在 0–255 内
+钳制目标值，本地记录当前姿态作为步进基准；若机械臂曾被其他程序移动，先按 `m` 回中再
+步进。首次实机测试须净空 1 m、确认急停可达，并且只按 `m` 验证一次回中行为。

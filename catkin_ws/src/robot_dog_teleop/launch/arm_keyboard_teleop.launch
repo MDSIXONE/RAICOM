@@ -1,0 +1,17 @@
+<launch>
+  <!-- No default: real motion must be explicitly requested at launch time. -->
+  <arg name="enable_motion" doc="Set exactly true only after the on-site safety checklist is complete."/>
+  <arg name="arm_step" default="10.0"/>
+  <arg name="claw_step" default="10.0"/>
+  <arg name="home_x" default="80.0"/>
+  <arg name="home_z" default="60.0"/>
+
+  <node pkg="robot_dog_teleop" type="arm_keyboard_teleop.py"
+        name="robot_dog_arm_keyboard_teleop" output="screen" required="true">
+    <param name="enable_motion" value="$(arg enable_motion)"/>
+    <param name="arm_step" value="$(arg arm_step)"/>
+    <param name="claw_step" value="$(arg claw_step)"/>
+    <param name="home_x" value="$(arg home_x)"/>
+    <param name="home_z" value="$(arg home_z)"/>
+  </node>
+</launch>

@@ -75,6 +75,7 @@ class ContinuousKeyboardTeleop:
         self._gamepad.verify_identity()
         self._armed = False
         self._arm_requested_until = 0.0
+        self._ctrl_c_exit_armed = False
         self._command_id = 0
         self._stop_timer = None
         self._last_refresh_at = 0.0
@@ -132,7 +133,7 @@ class ContinuousKeyboardTeleop:
         print(
             "ARMED (CONTINUOUS): w/s refresh XGO ±{:.0f}, a/d refresh yaw ±{:.0f}. "
             "Terminal repeats are limited to 10 Hz; stopping repeats sends zero within {:.2f}s locally / 0.35s host watchdog. "
-            "Space/x/Ctrl-C locks and stops.".format(
+            "Space/x stops and locks; Ctrl-C stops, twice to exit.".format(
                 self._linear_value, self._yaw_value, self._hold_timeout
             )
         )
@@ -184,7 +185,8 @@ class ContinuousKeyboardTeleop:
         settings = termios.tcgetattr(sys.stdin)
         print(
             "CONTINUOUS keyboard teleop is LOCKED. Press u, then y; "
-            "hold w/s/a/d so terminal repeats refresh motion; stopping repeats stops it."
+            "hold w/s/a/d so terminal repeats refresh motion; stopping repeats stops it. "
+            "Space/x stop and lock; Ctrl-C stops, twice to exit."
         )
         try:
             tty.setraw(sys.stdin.fileno())
@@ -192,7 +194,14 @@ class ContinuousKeyboardTeleop:
                 key = self._read_key()
                 if not key:
                     continue
-                if key in ("\x03", " ", "x"):
+                if key == "\x03":
+                    self._lock_and_stop("emergency stop")
+                    if self._ctrl_c_exit_armed:
+                        print("Ctrl-C pressed twice: exiting keyboard teleop.")
+                        break
+                    self._ctrl_c_exit_armed = True
+                    print("Emergency stop sent. Press Ctrl-C again to exit the program.")
+                elif key in (" ", "x"):
                     self._lock_and_stop("emergency stop")
                 elif key == "u":
                     self._request_arm()
@@ -203,7 +212,7 @@ class ContinuousKeyboardTeleop:
                 else:
                     print(
                         "Keys: u then y arm; hold w/s/a/d for terminal repeat refresh; "
-                        "stop repeats to stop; space/x/Ctrl-C stop and lock."
+                        "stop repeats to stop; space/x stop and lock; Ctrl-C stops, twice to exit."
                     )
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)

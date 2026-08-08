@@ -1,0 +1,19 @@
+<launch>
+  <!-- Mask out a circular region in front of the lidar (default: a robotic
+       arm mounted 0.15 m ahead, arm base radius 0.15 m).  Republished as
+       /scan_filtered; the local costmap can point its scan topic there. -->
+  <arg name="scan_topic" default="/scan" />
+  <arg name="filtered_topic" default="/scan_filtered" />
+  <arg name="center_x" default="0.15" />
+  <arg name="center_y" default="0.0" />
+  <arg name="radius" default="0.15" />
+
+  <node pkg="robot_dog_navigation" type="scan_circle_filter.py"
+        name="scan_circle_filter" output="screen">
+    <param name="scan_topic" value="$(arg scan_topic)" />
+    <param name="filtered_topic" value="$(arg filtered_topic)" />
+    <param name="center_x" value="$(arg center_x)" />
+    <param name="center_y" value="$(arg center_y)" />
+    <param name="radius" value="$(arg radius)" />
+  </node>
+</launch>

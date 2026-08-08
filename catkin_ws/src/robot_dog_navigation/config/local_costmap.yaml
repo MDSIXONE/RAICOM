@@ -23,7 +23,7 @@ obstacle_layer:
   scan:
     sensor_frame: laser_frame
     data_type: LaserScan
-    topic: /scan
+    topic: /scan_filtered
     marking: true
     clearing: true
     inf_is_valid: false

@@ -83,3 +83,60 @@ rostopic echo -n 1 /move_base/GlobalPlanner/plan
 
 先在第二个终端按 `Ctrl+C`，关闭导航节点和 RViz；再在第一个终端按 `Ctrl+C`，停止本地
 Master。两者只影响本机 WSL，不会停止或修改机器狗容器。
+
+## 7. 实机键盘建图（gmapping）
+
+建图需要实机（192.168.137.157）、WSL 本地 master 与 rviz 同时在线。
+
+### 7.1 准备
+
+1. 实机通电，确认 `oumax-manual.service` 为 active（断电后需手动
+   `sudo -n systemctl start oumax-manual.service`），`/health` 与 `/imu` 正常。
+2. 确认 WSL 当前 IP（`ip addr` 找 192.168.137.x，会变），master 由
+   `wsl-simulation/start_local_control.sh` 拉起（内含 `ROS_MASTER_URI` 与 `ROS_IP`）。
+3. 启动实机主流程（建图模式，机器起点对齐地图原点 0,0）：
+
+```bash
+docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /root/catkin_ws/devel/setup.bash; export ROS_MASTER_URI=http://<WSL_IP>:11311; export ROS_IP=192.168.137.157; roslaunch robot_dog_bringup robot_dog_main.launch enable_motion:=true enable_mapping:=true init_x:=0.0 init_y:=0.0 > /tmp/main_launch.log 2>&1"
+```
+
+确认 `/slam_gmapping`、`/laser_frame_tf` 在线，`/map` 有首图（latching 重放正常）。
+
+### 7.2 键盘控制建图
+
+在实机容器内交互终端逐行执行（**不要批量粘贴**，批量粘贴会导致 rosrun 提前退出）：
+
+```bash
+docker exec -it ros-noetic bash
+source /opt/ros/noetic/setup.bash
+source /root/catkin_ws/devel/setup.bash
+export ROS_MASTER_URI=http://<WSL_IP>:11311
+export ROS_IP=192.168.137.157
+rosrun robot_dog_teleop mapping_keyboard_teleop.py
+```
+
+按住 `w/s` 前后、`a/d` 转向（松开 0.25s 自动停），`q` 退出。期间在 rviz 中观察
+`/map` 实时增长（建图必须移动机器，gmapping 运动阈值才触发 scan 处理）。
+
+### 7.3 保存地图
+
+建图满意后退出键盘节点，在容器内执行（`map_saver` 属于 map_server 包）：
+
+```bash
+rosrun map_server map_saver -f /root/catkin_ws/src/robot_dog_navigation/maps/ricam_arena_mapped
+```
+
+把生成的 `ricam_arena_mapped.pgm/yaml` 同步回仓库
+`catkin_ws/src/robot_dog_navigation/maps/` 并提交。
+
+### 7.4 切回导航模式
+
+```bash
+docker exec ros-noetic bash -lc "pkill -f 'roslaunch[ ]robot_dog_main' 2>/dev/null; sleep 2"
+docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /root/catkin_ws/devel/setup.bash; export ROS_MASTER_URI=http://<WSL_IP>:11311; export ROS_IP=192.168.137.157; roslaunch robot_dog_bringup robot_dog_main.launch enable_motion:=true map_file:=/root/catkin_ws/src/robot_dog_navigation/maps/ricam_arena_mapped.yaml > /tmp/main_launch.log 2>&1"
+```
+
+导航模式加载 `ricam_arena_mapped`，`/slam_gmapping` 消失、`/map_server` 与
+`/move_base` 恢复；此时在 rviz 用 2D Nav Goal 选点即进入 cym_planner 导航。
+注意：导航模式的 `init_x/init_y` 默认 (-0.70, 1.00)，若机器起点与建图原点不一致，
+用 `init_x:=0.0 init_y:=0.0` 等参数对齐。

@@ -3,7 +3,8 @@
 
 The node starts locked.  A user must press ``m`` then ``y`` to arm it.  Each
 motion key sends only one short pulse and a timer always publishes zero again.
-Space, ``x`` and Ctrl-C immediately stop and lock the node.
+Space and ``x`` stop and lock the node; Ctrl-C stops on the first press and
+exits the process on the second.
 """
 
 import select
@@ -31,6 +32,7 @@ class KeyboardPulseTeleop:
         self._publisher = rospy.Publisher(self._command_topic, Twist, queue_size=1)
         self._armed = False
         self._arm_requested_until = 0.0
+        self._ctrl_c_exit_armed = False
         self._stop_timer = None
         self._lock = threading.Lock()
 
@@ -106,14 +108,21 @@ class KeyboardPulseTeleop:
         if not sys.stdin.isatty():
             raise RuntimeError("keyboard teleop requires an interactive terminal")
         settings = termios.tcgetattr(sys.stdin)
-        print("Keyboard teleop is LOCKED. Press u, then y to arm; space/x/Ctrl-C stop and lock.")
+        print("Keyboard teleop is LOCKED. Press u, then y to arm; space/x stop and lock; Ctrl-C stops, twice to exit.")
         try:
             tty.setraw(sys.stdin.fileno())
             while not rospy.is_shutdown():
                 key = self._read_key()
                 if not key:
                     continue
-                if key in ("\x03", " ", "x"):
+                if key == "\x03":
+                    self._lock_and_stop("emergency stop")
+                    if self._ctrl_c_exit_armed:
+                        print("Ctrl-C pressed twice: exiting keyboard teleop.")
+                        break
+                    self._ctrl_c_exit_armed = True
+                    print("Emergency stop sent. Press Ctrl-C again to exit the program.")
+                elif key in (" ", "x"):
                     self._lock_and_stop("emergency stop")
                 elif key == "u":
                     self._request_arm()
@@ -122,7 +131,7 @@ class KeyboardPulseTeleop:
                 elif key in bindings:
                     self._pulse(*bindings[key])
                 else:
-                    print("Keys: u then y arm; w/s move; a/d rotate; space/x/Ctrl-C stop and lock.")
+                    print("Keys: u then y arm; w/s move; a/d rotate; space/x stop and lock; Ctrl-C stops, twice to exit.")
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
             self._lock_and_stop("node exit")

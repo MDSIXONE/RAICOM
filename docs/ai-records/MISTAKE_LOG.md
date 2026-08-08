@@ -2,6 +2,118 @@
 
 此文档保存已经确认、可帮助后续工作避免重复的错误与教训。
 
+## 2026-08-08｜gmapping 用 tf1 不读 /tf_static，静态 TF 发布者导致建图只有首图
+
+- 现象：实机 gmapping 启动后 /map 只有一张首图（latching 重放）且从不更新；DEBUG 日志每帧 `Message ready ... processing scan` 后紧跟 `cannot process scan`（addScan 返回 false，无任何 WARN）。
+- 原因：`base_link→laser_frame` 用 `static_transform_publisher` 发布到 `/tf_static`；**gmapping 使用 tf1（tf::TransformListener）不订阅 /tf_static**（nav 栈 move_base/costmap 用 tf2 所以正常）→ initMapper 的 laser 变换查询失败 → got_first_scan_ 恒 false → 每帧 addScan 失败。本地对照实验（静态 TF → extrapolation 报错；改为动态 TF 后 processing/cannot=156/122 且 "Updated the map" 持续出现）实锤。
+- 防范规则：给 gmapping 供 TF 必须用动态发布（本项目 `laser_frame_tf.py` 每 10Hz 发 /tf）；排查"有数据源但不出图"时先确认数据消费方的 TF 机制（tf1 vs tf2）；其余次要因素：scan.header.stamp 需回拨（如 now-0.2s）避免 extrapolation；静止不触发 openslam 运动阈值（linearUpdate/angularUpdate），建图必须移动。
+- 关联改动：2026-08-08｜gmapping 键盘建图与实机地图切换
+
+## 2026-08-08｜simple_odom 位移限幅按低速设计，foot 步速超限导致位置静默不更新
+
+- 现象：rviz 车体原地旋转但位置不动（用户：现实中机器动了）；odom x/y 恒为初始值。
+- 原因：`d_max=0.02m/帧` 按 ≤0.2m/s 设计（0.02 ÷ 0.1s），foot 实际步速 0.3~0.8m/s × 0.1s = 0.03~0.08m/帧 → 每帧位移超限被清零；yaw 走 IMU 直读不受影响 → 只转不走。
+- 防范规则：位移/速度限幅必须按实测运动能力设计（本次 0.02→0.10，上限 1.0m/s @ 10Hz）；"位置不动但朝向在动"优先怀疑 x/y 通道被滤波/限幅清零。
+- 关联改动：2026-08-08｜gmapping 键盘建图与实机地图切换
+
+## 2026-08-08｜ros-noetic-slam-gmapping 是空 wrapper，可执行文件在 gmapping 包
+
+- 现象：roslaunch 报 `cannot launch node of type [slam_gmapping/slam_gmapping]`。
+- 原因：`ros-noetic-slam-gmapping` 只含 package.xml；可执行文件在 `/opt/ros/noetic/lib/gmapping/slam_gmapping`（`dpkg -L ros-noetic-gmapping` 确认）。
+- 防范规则：launch 节点必须写 `pkg="gmapping" type="slam_gmapping"`；报 "cannot launch node of type" 时用 `dpkg -L` 查可执行文件实际所在包。
+- 关联改动：2026-08-08｜gmapping 键盘建图与实机地图切换
+
+## 2026-08-08｜WSLg 窗口 COPY MODE：fstab 自动挂载是概率性方案
+
+- 现象：本地 rviz 窗口在 Windows 桌面不可见（标题带 `[WARN:COPY MODE]`）；`/mnt/wslg/weston.log` 出现 `rdp_allocate_shared_memory: Failed to open "/mnt/shared_memory/{GUID}" with error: Input/output error`。
+- 原因：WSL 2.7.11 / WSLg 1.0.73.2 回归（microsoft/wslg #1456），weston 启动时 `/mnt/shared_memory` 挂载未就绪；用户发行版 `/etc/fstab` 的 automount 与 WSLg 启动存在竞态——即使 `mount` 显示 tmpfs 已挂载，weston 仍可能在竞态窗口内打开失败（首次修复成功，WSL 重启后复发）。
+- 防范规则：改用 `/etc/wsl.conf [boot] command=/root/fix_shm.sh`（root 早期执行 `mkdir -p /mnt/shared_memory; mountpoint -q /mnt/shared_memory || mount -t tmpfs tmpfs /mnt/shared_memory`）确定性预挂载；WSL 重启后必须检查 `grep -c "rdp_allocate_shared_memory: Failed" /mnt/wslg/weston.log` 为 0（`enable_copy_warning_title` 标记残留无碍，以 allocate 失败计数为准）。
+- 关联改动：2026-08-08｜主流程集成（本地控制台与 rviz 显示）
+
+## 2026-08-08｜pkill -f 会匹配到 SSH 会话自身的命令行
+
+- 现象：通过 SSH 执行 `pkill -f roslaunch` 后后续命令全部未执行（会话被自己杀掉），表现为 docker exec -d 启动失败、无输出。
+- 原因：SSH 会话的 `bash -c` 命令行本身包含 "roslaunch" 字样，`pkill -f` 按完整命令行匹配，杀死了自己。
+- 防范规则：对通过 SSH/容器远程执行的进程做 pkill 时使用方括号技巧（`pkill -f "roslaunch[ ]robot_dog_main"`、`pkill -f "[m]ove_base"`）；`pkill -x` 对 python 进程无效（comm 是 python3）。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜C++ 节点不自动重连 master，且重复 roslaunch 造成双实例
+
+- 现象：本地 master 重启后，容器内 C++ 节点（move_base 等）停留在等待/注册态，话题仍在列表但无发布者；再次执行 roslaunch 后容器内出现多个 move_base 进程（实测 2~3 个），新旧实例抢占订阅。
+- 原因：ROS 1 C++ 节点 master 掉线后不会自动重连（python 节点可能重连）；roslaunch 无 respawn，进程残留；未先清理旧 roslaunch 就再启动。
+- 防范规则：master 重启后必须重启实机 roslaunch；重启前先 `pkill -f "roslaunch[ ]robot_dog_main"` 并确认 `ps aux | grep [m]ove_base | wc -l` 为 0；用 XMLRPC `getSystemState` 而非 `rostopic list` 判断节点是否在线（话题注册 ≠ 有发布者）。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜导航 goal 超出地图边界导致规划永远失败
+
+- 现象：move_base 收到 goal 后无任何执行（日志 `The goal sent to the global planner is off the global costmap. Planning will always fail to this goal.`）；容器内/本地发 goal 只看到旧 goal 的 status 4（ABORTED）重播。
+- 原因：ricam_arena 地图范围 x∈[-1.5,1.5]、y∈[-1.25,1.25]，测试 goal (-0.70,1.30)/(-0.70,1.50) 的 y 超出地图上界 1.25 → 全局规划永远失败。
+- 防范规则：发 goal 前确认目标点在地图边界内；区分新旧 goal 看 status 时以 goal_id 为准（move_base 会给新订阅者重播旧 goal 的最终状态）。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜雷达遮挡滤波不要凭猜测改方向，先实测遮挡范围
+
+- 现象：用户判断"雷达可能装反了"，把 scan_circle_filter 圆心改到后方（center_x=-0.15）后滤波无效果；实测 /scan 数据才知机械臂实际位于雷达正前方 ±18°、r=0.08-0.10 m（雷达并未装反）。
+- 原因：凭视觉猜测滤波方向，未先分析真实 /scan 的距离-角度分布。
+- 防范规则：滤波/标定类参数改动前，先 dump 实际 /scan 数据（按 range/angle 统计）定位遮挡体位置；当前有效方案为扇形滤波 `sector_center_deg=0`、`sector_half_width_deg=20`、`sector_max_range=1.0`。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜WSL 局域网 IP 由 DHCP 动态分配，跨机器 ROS 联调须先确认
+
+- 现象：WSL/Windows（mirrored 模式共享 IP）重启后 IP 从 192.168.137.41 变为 192.168.137.232，master 进程存活但 `rostopic list` 报 `Unable to communicate with master!`。
+- 原因：DHCP 重新分配；本地脚本与实机 launch 中硬编码旧 IP。
+- 防范规则：跨机器联调前先确认当前 IP；start_local_control.sh 支持 `RAICOM_LOCAL_IP` 覆盖；实机启动命令的 `ROS_MASTER_URI` 同步更新（当前 192.168.137.232:11311）。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜XGO 固件运动步进死区：yaw 小于 12 的动作不执行
+
+- 现象：桥接持续刷新 yaw=10 时机器完全不转向（delta 0°），而 curl 单发 yaw=30/1.0s 转向 31.62°。
+- 原因：XGO 固件 VYAW/VX 是"动作触发"命令且存在步进死区（<12 不动）；runtime=0 的瞬时命令≈不动；turn(value, runtime>0) 的服务端 sleep 导致请求响应 ~0.26s 超过桥接 timeout 0.25s。
+- 防范规则：桥接步进必须避开死区（`_scale_step` 线性映射 min_step=15）；服务端改用 Timer 看门狗（命令立即返回，runtime 后自动发停）替代 sleep；运动参数标定一律用持续刷新 + IMU yaw 实测验证。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜机器驱动布局不对称：仅左侧两轮有驱动，wheel 模式转向打滑不可用
+
+- 现象：wheel4 模式（麦克纳姆/差速公式）转向均无效（1-3°/s 打滑），机器表现为平移而非旋转；逐轮驱动诊断 wheel0(lf)=+0.85°、wheel1(rf)=0°、wheel2(lr)=+14.26°、wheel3(rr)=0°——只有左侧两轮（lf、lr）可驱动，右侧 rf/rr 是无刷被动轮。
+- 原因：默认假设麦克纳姆四轮对称驱动；实际该机型轮足款直驱轮无滚子，右侧两轮无驱动电机，任何四轮混合公式在直轮+非对称驱动下都退化为打滑平移。
+- 防范规则：运动模式标定前先逐轮单驱诊断（kind=wheel speeds=[s,0,0,0] 逐个测 IMU delta）；wheel 模式不可用时切换 foot（dog）模式——站立、行走、转身可用（yaw=15→21°/s、30→36°/s），机器人导航走 foot 模式。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-08｜容器内 C++ 节点 __log 日志文件缺失
+
+- 现象：`/root/.ros/log/<run_id>/` 只有 python 节点的日志，move_base-9.log / map_server-1.log 等 C++ 节点日志文件不存在。
+- 原因：疑似 log4cxx 日志文件创建失败（不影响节点功能，move_base 正常运行）。
+- 防范规则：排障 C++ 节点时不要依赖 __log 文件，改用 roslaunch 的 stdout 重定向（/tmp/main_launch.log，中文乱码用 `grep -a` + `sed "s/\x1b\[[0-9;]*m//g"` 剥 ANSI）或 XMLRPC/rosnode info 直接诊断。
+- 关联改动：2026-08-08｜主流程集成
+
+## 2026-08-07｜数据集通配符包含诊断图片
+
+- 现象：第一次生成 YOLO 数据集时按 `*.jpg` 扫描，结果把本次生成的诊断拼图也当成第 601 张原始图片。
+- 原因：诊断文件与采集图片位于同一目录，且文件名没有使用原始采集文件的 `capture_` 前缀约束。
+- 防范规则：处理采集数据时使用精确文件名模式（本次为 `capture_*.jpg`），并在生成前后校验原始文件数量与命名集合。
+- 关联改动：2026-08-07｜RICAM 红蓝绿球 YOLO 数据集
+
+## 2026-08-05｜raw 模式下 Ctrl-C 不产生 SIGINT
+
+- 现象：`tty.setraw()` 的键盘控制进程按 Ctrl-C 只停止运动，进程无法从键盘退出，用户只能另开终端 kill。
+- 原因：raw 模式关闭 ISIG，Ctrl-C 不再产生 SIGINT，而是作为字节 `\x03` 进入输入流；`\x03` 分支只做了锁定停止，主循环没有退出路径。
+- 防范规则：使用 `tty.setraw()` 的交互程序必须显式处理 `\x03` 并设计退出路径（本仓库约定：第一次 Ctrl-C 急停锁定、第二次退出）；不要把“停止运动”当作“退出进程”。
+- 关联改动：2026-08-05｜键盘 Ctrl-C 双次退出修复
+
+## 2026-08-05｜PowerShell 远程部署命令的变量转义不能依赖嵌套引号
+
+- 现象：部署时用于移动机器端旧导航包的远程备份命令因 PowerShell、SSH 与 Bash 的多层变量转义失败，备份没有执行，但后续上传已覆盖目标目录。
+- 原因：在 PowerShell 双引号字符串中传递 Bash 的 `$backup` 变量，产生了不完整的远程 shell 语法；未把“备份成功”作为上传前的独立确认点。
+- 防范规则：远程部署应把备份、上传和验证拆成独立命令；使用已解析的固定绝对路径或单引号传递远程 Bash，且只有确认备份目录存在后才允许覆盖上传。
+- 关联改动：2026-08-05｜接入独立发布版 CymPlanner 局部规划器
+
+## 2026-08-05｜新增 Catkin 包目录遗漏 src 层级
+
+- 现象：首次创建的 `robot_dog_yolo_dataset` 位于 `catkin_ws/`，不会被 Catkin 顶层工作空间扫描。
+- 原因：创建文件时未遵循仓库规定的 `catkin_ws/src/` 功能包根目录。
+- 防范规则：新增 ROS 功能包前先确认 Catkin 顶层 `src/CMakeLists.txt` 与仓库目录约定，并仅在 `catkin_ws/src/` 下创建包目录。
+- 关联改动：2026-08-05｜YOLO 相机训练集采集功能包
+
 ## 模板：YYYY-MM-DD｜简短标题
 
 - 现象：

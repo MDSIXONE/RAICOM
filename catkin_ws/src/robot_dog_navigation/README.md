@@ -1,7 +1,10 @@
 # robot_dog_navigation
 
 本包同时提供本机 WSL 离线演示和实机只读可视化。两种模式都使用 ROS Noetic
-官方 `move_base` 和 `global_planner/GlobalPlanner`。
+官方 `move_base` 和 `global_planner/GlobalPlanner`；局部规划器使用
+`cym_planner/CymPlanner`（独立发布包 `cym_planner_standalone_20260713` 的源码，
+位于同工作区 `catkin_ws/src/cym_planner`，参数由
+`cym_planner/config/cym_planner_params.json` 加载）。
 
 通过仓库根目录的 `wsl-simulation/setup_offline_navigation.sh` 构建，然后执行：
 
@@ -21,6 +24,8 @@ bash /mnt/d/WORK/ALLCODE/RAICOM/wsl-simulation/start_offline_navigation.sh
 - `/move_base/global_costmap/costmap`：官方 `costmap_2d` 发布的全局代价地图。
 - `/move_base/local_costmap/costmap`：1 m × 1 m 滚动局部代价地图。
 - `/move_base/GlobalPlanner/plan`：收到目标点后由官方全局规划器发布的路径。
+- `/cym_planner/map_image`：CymPlanner 发布的局部代价地图与路径叠加图。
+- `/cym_planner/plan_image`：CymPlanner 发布的车体系路径俯视图。
 
 默认初始位姿为 RICAM 地图中适合 0.27 m × 0.16 m 矩形替身的安全位置：`map` 坐标
 `(-0.70, 1.00, 0 rad)`；默认地图
