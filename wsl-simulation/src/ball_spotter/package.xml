@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>ball_spotter</name>
+  <version>0.1.0</version>
+  <description>Real-time red/blue/green ball detection from an MJPEG stream using a YOLOv8 ONNX model.</description>
+  <maintainer email="raicom@example.com">RAICOM</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+</package>

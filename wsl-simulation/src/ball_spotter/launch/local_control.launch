@@ -1,0 +1,15 @@
+<launch>
+  <!-- Local control station: runs against the LOCAL rosmaster.
+       The robot's bringup (on the physical device) connects here and
+       publishes map / lidar / camera topics.  This launch only adds the
+       ball detector and RViz. -->
+  <node pkg="ball_spotter" type="ball_detector_node.py" name="ball_detector_node" output="screen">
+    <param name="model" value="$(find ball_spotter)/models/best.onnx"/>
+    <param name="conf" value="0.5"/>
+    <param name="image_topic" value="/camera/rgb/image_raw"/>
+    <param name="output_topic" value="/ball_detector/image"/>
+  </node>
+
+  <node pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find robot_dog_navigation)/rviz/local_control.rviz" required="true"/>
+</launch>
