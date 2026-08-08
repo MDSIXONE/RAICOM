@@ -2,6 +2,24 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-09｜定点导航接入激光定位（jie_ware lidar_loc）与局部代价地图
+
+- 状态：改动完成
+- 目标：把 https://github.com/6-robot/jie_ware 的激光扫描匹配定位节点 `lidar_loc` 集成进定点导航任务（替代静态 map→odom TF），并让任务/本地 rviz 的局部代价地图具备 `/scan_filtered` 数据源与可视化。
+- 影响文件：`catkin_ws/src/jie_ware/`（新增第三方包：`src/{lidar_loc,costmap_cleaner,lidar_filter_node}.cpp`、`CMakeLists.txt`、`package.xml`、`LICENSE`、`launch/`）、`catkin_ws/src/robot_dog_navigation/scripts/initial_pose_publisher.py`（新增）、`catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`、`catkin_ws/src/robot_dog_bringup/package.xml`、`catkin_ws/src/robot_dog_navigation/{launch/offline_navigation.launch,launch/robot_visualization.launch,CMakeLists.txt,package.xml}`、`docs/local-rviz-navigation-quickstart.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`lidar_loc` 订阅 `/map` 与 `/scan_filtered`，把激光点投影到地图障碍物渐变图做逐帧 15 变换（±1 栅格 × ±1°）迭代匹配，解出 map 系位姿并结合 `simple_odom` 的 odom→base 里程计发布 `map→odom` TF（30Hz）；收到 `/initialpose` 约 30 帧后自动调 `move_base/clear_costmaps`。导航模式用 `lidar_loc`（laser_topic=/scan_filtered）替换原静态 map_to_odom 并移除组外静态节点（顺带消除建图模式 gmapping 与静态 map_to_odom 双发布者冲突隐患）；新增 `initial_pose_publisher.py` 在 `/map` 到达后延时 1s 重复发布 5 次 `/initialpose`（init_x/init_y 默认 -0.70/1.00），覆盖 lidar_loc 收到地图时重置地图原点的竞争；本地 `offline_navigation.launch` 新增 `scan_circle_filter`（/scan→/scan_filtered，参数与实机一致）使局部代价地图有数据、rviz 的 Local Costmap 显示生效，并新增 `use_lidar_loc` arg（默认 false，true 时验证 lidar_loc 节点/TF 链路——mock 房间数据与 RICAM 地图不匹配，估计会漂移属预期）；`robot_visualization.launch` 同步加 filter 并把云点改订阅 `/scan_filtered`；`robot_dog_bringup/package.xml` 补齐运行依赖（gmapping/map_server/move_base/jie_ware/cym_planner 等）。
+- 验证：jie_ware 三节点在 WSL Noetic 编译链接成功（需 cv_bridge/OpenCV，环境自带）；三个 launch 与两个 package.xml 均通过 XML 解析；离线默认模式端到端实测：`/scan_filtered` 有 360 点数据、`/move_base/local_costmap/costmap` 100×100@0.01 滚动窗口持续更新、`scan_circle_filter/move_base` 在线；`use_lidar_loc:=true` 实测：`lidar_loc/initial_pose_publisher` 在线，`tf map→odom` 持续发布且匹配结果随 mock 数据收敛（yaw ≈ -24°），`/initialpose` 发布窗口正常。
+- 遗留风险：lidar_loc 收到 /map 会重置估计到地图原点，单独重启该节点会卡原点——须与 initial_pose_publisher 同启（已在 launch 注释与文档写明）；lidar_loc 匹配算法只在估计位姿附近 ±1 栅格/±1° 搜索，初始位姿误差需较小，实机开机后需确认 initialpose 落点与实际位置偏差在收敛域内；jie_ware 为 GPL-2.0 许可，与仓库其余 BSD-3-Clause 包隔离管理（进程间 topic 通信无链接传染）；实机导航闭环（lidar_loc 收敛后 2D Nav Goal 全程）待机器开机验证。
+
+## 2026-08-08｜键盘姿态控制：j1-j15 关节步进调姿与姿态记录
+
+- 状态：改动完成
+- 目标：新增键盘程序控制车体姿态（机械爪、前腿、后腿共 15 个关节），终端实时显示当前姿态（如 `j1 1, j2 1`），支持一键记录姿态到文件。
+- 影响文件：`catkin_ws/src/robot_dog_teleop/scripts/pose_keyboard_teleop.py`（新增）、`catkin_ws/src/robot_dog_teleop/launch/pose_keyboard_teleop.launch`（新增）、`catkin_ws/src/robot_dog_teleop/host/launch_pose_keyboard_teleop.sh`（新增）、`host-services/oumax-xgo/manual_control_server.py`（新增 `kind=motor` 单关节接口）、`catkin_ws/src/robot_dog_teleop/{CMakeLists.txt,host/install_host_handover.sh,README.md}`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：关节映射 j1–j12 为四腿（j1/j2/j3 左前、j4/j5/j6 右前、j7/j8/j9 右后、j10/j11/j12 左后，分别为小腿/大腿/髋，舵机 id 11–43），j13 夹爪（51）、j14 小臂（52）、j15 大臂（53），范围按原厂 mcp 文档（小腿 [-73,57]、大腿 [-66,93]、髋 [-31,31]、爪 [-65,65]、小臂 [-115,70]、大臂 [-85,100]），默认姿态 0/0/-85/70；`manual_control_server.py` 新增 `MOTOR_RANGES` 表 + `handle_motor`（id/角度类型与范围校验、中文错误、`bot.motor(id, angle)`）+ dispatch 分支；`pose_keyboard_teleop.py` 沿用 u→y 双确认、`enable_motion:=true` 门禁、空格/x 锁定、Ctrl-C 双次退出模式，`[`/`]` 循环选关节、`w`/`s` 细步（默认 1°）、`q`/`e` 粗步（默认 10°）、`m` 回中、`r` 记录姿态（UTF-8 追加、失败仅报错）、`h` 帮助；终端底部 3 行 ANSI 实时重绘（状态行 + 姿态两行，每行 ≤80 字符，80 列终端不换行），姿态行格式 `j1 0, j2 0, ...` 便于抄录；未武装时按键只更新本地跟踪值不发送；`install_host_handover.sh` 注册 `raicom-launch-pose-keyboard`。
+- 验证：py_compile 通过；launch XML 解析通过；两个 host 脚本在 WSL `bash -n` 通过；git 空白检查通过；独立测试脚本（mock `bot.motor`/rospy/termios）40+ 断言全部通过（15 关节范围端点 57/-73/93/-66/31/-31/65/-65/70/-115/100/-85 接受、越界拒绝、未知/缺失/非数字 id 拒绝、关节表名/id 映射、默认姿态行、钳制与边界 no-op、关节循环选择、记录文件内容、回中）；全部改动文件 LF 行尾。
+- 遗留风险：本地跟踪角度与舵机真实角度可能漂移（若曾被其他程序移动），首次使用须先按 `m` 回中；单关节步进可能改变腿的姿态稳定性，须在站稳、净空 1 m 场地以最小细步逐关节验证方向；`kind=motor` 与 `raicom-launch-pose-keyboard` 需部署后实机验证；52/53 大臂舵机默认值按原厂文档，实机回中后需目视核对。
+
 ## 2026-08-08｜gmapping 键盘建图与实机地图切换
 
 - 状态：改动完成

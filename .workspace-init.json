@@ -1,0 +1,24 @@
+{
+  "project_type": "比赛",
+  "created_folders": [
+    "competition-rules",
+    "catkin_ws",
+    "docs",
+    "robot-information",
+    "scripts",
+    "technical-reports",
+    "host-services",
+    "blender-maps",
+    "wsl-simulation",
+    "datasets",
+    "archive",
+    "tmp"
+  ],
+  "components": {
+    "agents_md": true,
+    "project_memory_records": true,
+    "github_commit": true,
+    "context7_mcp": true
+  },
+  "initialized_at": "2026-08-09"
+}

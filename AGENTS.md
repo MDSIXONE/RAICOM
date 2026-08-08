@@ -1,40 +1,22 @@
+# Universal Rules
+
+- Always answer in Chinese unless the context requires otherwise.
+- Do not write defensive or fallback code; it does not solve the root problem. Prefer full exposure: let failures surface clearly (explicit errors, exceptions, logs, failing tests) so bugs are visible and can be fixed at the root cause.
+- When editing existing code: if you notice unrelated dead code, mention it - don't delete it.
+
 # Repository Guidelines
-
-## Project Structure & Module Organization
-
-This repository targets a ROS Noetic robot dog for the RoboCom intelligent-delivery competition. Keep policy documents at the root and future ROS packages under `catkin_ws/src/`.
-
-## Build, Test, and Development Commands
-
-There is no build system, package manifest, or automated test suite yet. Review changes with standard text tools:
-
-```powershell
-Get-Content -Raw .\MODEL_ROUTING.md
-rg "^#{1,6} " *.md
-rg "GPT-5\.6|L0|L1|L2|L3" MODEL_ROUTING.md
-```
-
-They inspect content, headings, and terminology. Commit tooling configuration and document reproducible commands here.
-
-## Writing Style & Naming Conventions
-
-Use UTF-8 Markdown and preserve Chinese terminology and numbered headings. Use short paragraphs, ordered procedures, comparison tables, and language-tagged fences. Keep model IDs and labels exact: `gpt-5.6-terra`, `xhigh`, `L2`. Name top-level policies in uppercase snake case, as in `MODEL_ROUTING.md`.
-
-## Validation Guidelines
-
-Preview Markdown and check headings, tables, lists, and code fences. Verify routing tables, escalation rules, contracts, and prompts remain consistent. Update dates only for policy changes. Put future checks under `tests/` or `scripts/`.
 
 ## Commit & Pull Request Guidelines
 
-Use a Chinese Emoji subject in the form `Emoji 范围：简短动作`, for example `🧭 导航：优化目标点路径规划`. Use one coherent change per commit. Preferred scopes include `🤖 ROS`、`🧭 导航`、`👁️ 视觉`、`🔤 OCR`、`🗺️ 地图`、`🐛 修复`、`🧪 测试`、`🔧 配置` and `📚 文档`. Do not rewrite published history merely to restyle messages. Pull requests should explain affected sections, safety implications, validation, linked issues, and layout screenshots when needed.
+Follow the `github-commit` skill for commit message and pull request conventions. Use one coherent change per commit. Do not rewrite published history merely to restyle messages.
 
 ## Security & Configuration
 
-Never commit keys, credentials, private prompts, or production data. Treat security and irreversible changes as high risk under `MODEL_ROUTING.md`.
+Never commit keys, credentials, private prompts, or production data.
 
 ## Agent-Specific Instructions
 
-Any task that writes or modifies source code must use at least one sub-agent for a bounded implementation, test, or review subtask. The primary agent must integrate changes, inspect the diff, run tests, and resolve conflicts. Documentation-only edits do not require delegation. Follow `MODEL_ROUTING.md`; never delegate high-risk decisions solely to a lower-capability model.
+Any task that writes or modifies source code may use a sub-agent to complete the task.
 
 ## AI Work Records
 
