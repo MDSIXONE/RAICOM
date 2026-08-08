@@ -137,6 +137,32 @@ def handle_arm(payload: dict[str, Any]) -> str:
     return f"arm {command}"
 
 
+MOTOR_RANGES: dict[int, tuple[float, float]] = {
+    11: (-73, 57), 12: (-66, 93), 13: (-31, 31),
+    21: (-73, 57), 22: (-66, 93), 23: (-31, 31),
+    31: (-73, 57), 32: (-66, 93), 33: (-31, 31),
+    41: (-73, 57), 42: (-66, 93), 43: (-31, 31),
+    51: (-65, 65), 52: (-115, 70), 53: (-85, 100),
+}
+
+
+def handle_motor(payload: dict[str, Any]) -> str:
+    bot = get_dog()
+    try:
+        motor_id = int(payload.get("id"))
+        angle = float(payload.get("angle"))
+    except (TypeError, ValueError):
+        raise ValueError(f"电机 id 或角度无效: id={payload.get('id')!r} angle={payload.get('angle')!r}")
+    bounds = MOTOR_RANGES.get(motor_id)
+    if bounds is None:
+        raise ValueError(f"未知电机 id: {motor_id}")
+    low, high = bounds
+    if not low <= angle <= high:
+        raise ValueError(f"电机 {motor_id} 角度 {angle} 超出范围 [{low}, {high}]")
+    bot.motor(motor_id, angle)
+    return f"motor {motor_id}={angle:g}"
+
+
 def handle_wheel(payload: dict[str, Any]) -> str:
     bot = get_dog()
     enabled = payload.get("enabled")
@@ -254,6 +280,8 @@ def dispatch(payload: dict[str, Any]) -> dict[str, Any]:
             message = handle_motion(payload)
         elif kind == "arm":
             message = handle_arm(payload)
+        elif kind == "motor":
+            message = handle_motor(payload)
         elif kind == "wheel":
             message = handle_wheel(payload)
         elif kind == "gamepad":

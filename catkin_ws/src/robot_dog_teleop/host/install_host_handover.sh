@@ -20,6 +20,7 @@ test -f "$RC_LOCAL"
 install -m 0755 "$SCRIPT_DIR/raicom-control-handover" /usr/local/sbin/raicom-control-handover
 install -m 0755 "$SCRIPT_DIR/launch_physical_keyboard_teleop.sh" /usr/local/sbin/raicom-launch-physical-keyboard
 install -m 0755 "$SCRIPT_DIR/launch_physical_keyboard_continuous.sh" /usr/local/sbin/raicom-launch-physical-keyboard-continuous
+install -m 0755 "$SCRIPT_DIR/launch_pose_keyboard_teleop.sh" /usr/local/sbin/raicom-launch-pose-keyboard
 install -m 0644 "$SCRIPT_DIR/raicom-original-main.service" /etc/systemd/system/raicom-original-main.service
 
 if ! grep -Fqx "$MARKER" "$RC_LOCAL"; then

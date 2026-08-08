@@ -1,0 +1,15 @@
+<launch>
+  <!-- No default: real motion must be explicitly requested at launch time. -->
+  <arg name="enable_motion" doc="Set exactly true only after the on-site safety checklist is complete."/>
+  <arg name="fine_step" default="1.0"/>
+  <arg name="coarse_step" default="10.0"/>
+  <arg name="record_file" default="/tmp/xgo_poses.log"/>
+
+  <node pkg="robot_dog_teleop" type="pose_keyboard_teleop.py"
+        name="robot_dog_pose_keyboard_teleop" output="screen" required="true">
+    <param name="enable_motion" value="$(arg enable_motion)"/>
+    <param name="fine_step" value="$(arg fine_step)"/>
+    <param name="coarse_step" value="$(arg coarse_step)"/>
+    <param name="record_file" value="$(arg record_file)"/>
+  </node>
+</launch>
