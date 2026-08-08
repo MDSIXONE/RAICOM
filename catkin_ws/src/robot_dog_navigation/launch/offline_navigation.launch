@@ -3,12 +3,17 @@
        ROS_IP to loopback before invoking it. -->
   <arg name="map_file" default="$(find robot_dog_navigation)/maps/ricam_arena.yaml"/>
   <arg name="open_rviz" default="true"/>
+  <!-- Exercise the real lidar_loc scan-matching localization pipeline
+       instead of the static map->odom TF.  The mock scan is a generic room
+       pattern that does NOT match the RICAM map, so the estimate will drift;
+       this flag only validates the node / TF / initialpose wiring. -->
+  <arg name="use_lidar_loc" default="false"/>
 
   <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_file)" output="screen"/>
 
   <!-- Local safe pose in the latest RICAM map; it leaves clearance for the
        0.27 m x 0.16 m visual/planning footprint. -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
+  <node unless="$(arg use_lidar_loc)" pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
         args="0 0 0 0 0 0 map odom"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base_link"
         args="-0.70 1.00 0 0 0 0 odom base_link"/>
@@ -25,6 +30,35 @@
     <param name="body_width" value="0.16"/>
     <param name="body_height" value="0.10"/>
   </node>
+
+  <!-- Same masking as on the robot: feeds /scan_filtered so the local
+       costmap has real data to display. -->
+  <node pkg="robot_dog_navigation" type="scan_circle_filter.py"
+        name="scan_circle_filter" output="screen">
+    <param name="scan_topic" value="/scan"/>
+    <param name="filtered_topic" value="/scan_filtered"/>
+    <param name="center_x" value="0.0"/>
+    <param name="center_y" value="0.0"/>
+    <param name="radius" value="0.45"/>
+    <param name="sector_center_deg" value="0.0"/>
+    <param name="sector_half_width_deg" value="30.0"/>
+    <param name="sector_max_range" value="1.0"/>
+  </node>
+
+  <group if="$(arg use_lidar_loc)">
+    <node pkg="jie_ware" type="lidar_loc" name="lidar_loc" output="screen">
+      <param name="base_frame" value="base_link"/>
+      <param name="odom_frame" value="odom"/>
+      <param name="laser_frame" value="laser_frame"/>
+      <param name="laser_topic" value="/scan_filtered"/>
+    </node>
+    <node pkg="robot_dog_navigation" type="initial_pose_publisher.py"
+          name="initial_pose_publisher" output="screen">
+      <param name="init_x" value="-0.70"/>
+      <param name="init_y" value="1.00"/>
+      <param name="init_yaw" value="0.0"/>
+    </node>
+  </group>
 
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>

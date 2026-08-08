@@ -8,7 +8,9 @@
   <arg name="enable_motion" default="false"/>
   <!-- Mapping mode: run slam_gmapping instead of map_server + move_base so
        /map has a single publisher while a map is being built with keyboard
-       teleop (rosrun robot_dog_teleop mapping_keyboard_teleop.py). -->
+       teleop (rosrun robot_dog_teleop mapping_keyboard_teleop.py).  In
+       mapping mode pass init_x:=0.0 init_y:=0.0 so odom starts at the
+       robot's physical position. -->
   <arg name="enable_mapping" default="false"/>
   <!-- Odom origin: mapping starts at the robot's physical position (0,0);
        navigation mode reuses the arena pose used in offline sim. -->
@@ -48,12 +50,11 @@
     </node>
   </group>
 
-  <!-- RICAM offline pose used until real localization is integrated. -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_odom"
-        args="0 0 0 0 0 0 map odom"/>
   <!-- Dead-reckoning odometry: integrates /cmd_vel into odom -> base_link TF
-       so move_base / cym_planner see the robot move (starts at the static
-       offline pose above). -->
+       so move_base / cym_planner see the robot move.  In navigation mode the
+       map -> odom TF is published by lidar_loc below; in mapping mode
+       slam_gmapping publishes it, so no static map_to_odom exists here
+       (a static publisher would fight whichever node owns that transform). -->
   <node pkg="robot_dog_navigation" type="simple_odom.py"
         name="simple_odom" output="screen">
     <param name="init_x" value="$(arg init_x)"/>
@@ -107,6 +108,25 @@
   </node>
 
   <group unless="$(arg enable_mapping)">
+    <!-- Scan-matching localization (jie_ware lidar_loc): publishes map ->
+         odom TF at ~30 Hz from the /scan_filtered scan matched against
+         /map.  It resets to the map origin on the first map message, so
+         initial_pose_publisher re-publishes the RICAM offline pose after the
+         map arrives (initialpose callback also clears costmaps ~30 scans
+         later).  Keep this node paired with initial_pose_publisher: never
+         restart lidar_loc alone, or it will sit at the map origin. -->
+    <node pkg="jie_ware" type="lidar_loc" name="lidar_loc" output="screen">
+      <param name="base_frame" value="base_link"/>
+      <param name="odom_frame" value="odom"/>
+      <param name="laser_frame" value="laser_frame"/>
+      <param name="laser_topic" value="/scan_filtered"/>
+    </node>
+    <node pkg="robot_dog_navigation" type="initial_pose_publisher.py"
+          name="initial_pose_publisher" output="screen">
+      <param name="init_x" value="$(arg init_x)"/>
+      <param name="init_y" value="$(arg init_y)"/>
+      <param name="init_yaw" value="0.0"/>
+    </node>
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>
     <rosparam file="$(find cym_planner)/config/cym_planner_params.json" command="load"/>

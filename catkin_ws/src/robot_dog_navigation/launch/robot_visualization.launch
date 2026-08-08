@@ -19,9 +19,23 @@
     <arg name="test_duration_sec" value="$(arg lidar_test_duration_sec)"/>
   </include>
 
+  <!-- Same masking as robot_dog_main.launch: publishes /scan_filtered so the
+       local costmap has data in this read-only view too. -->
+  <node pkg="robot_dog_navigation" type="scan_circle_filter.py"
+        name="scan_circle_filter" output="screen">
+    <param name="scan_topic" value="/scan"/>
+    <param name="filtered_topic" value="/scan_filtered"/>
+    <param name="center_x" value="0.0"/>
+    <param name="center_y" value="0.0"/>
+    <param name="radius" value="0.45"/>
+    <param name="sector_center_deg" value="0.0"/>
+    <param name="sector_half_width_deg" value="30.0"/>
+    <param name="sector_max_range" value="1.0"/>
+  </node>
+
   <node pkg="robot_dog_navigation" type="scan_to_cloud_and_body.py"
         name="scan_to_cloud_and_body" output="screen">
-    <param name="scan_topic" value="/scan"/>
+    <param name="scan_topic" value="/scan_filtered"/>
     <param name="cloud_topic" value="/lidar_points"/>
     <param name="body_length" value="0.27"/>
     <param name="body_width" value="0.16"/>

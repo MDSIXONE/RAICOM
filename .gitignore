@@ -3,6 +3,9 @@
 /catkin_ws/devel/
 /catkin_ws/install/
 /catkin_ws/log/
+/wsl-simulation/build/
+/wsl-simulation/devel/
+/wsl-simulation/.catkin_workspace
 
 # Python bytecode
 __pycache__/

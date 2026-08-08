@@ -46,17 +46,19 @@ bash wsl-simulation/start_offline_navigation.sh
 source /opt/ros/noetic/setup.bash
 export ROS_MASTER_URI=http://127.0.0.1:11311
 export ROS_IP=127.0.0.1
-rostopic list | grep -E '^/(map|scan|lidar_points|move_base/global_costmap/costmap)$'
+rostopic list | grep -E '^/(map|scan|scan_filtered|lidar_points|move_base/(global|local)_costmap/costmap)$'
 ```
 
-应看到 `/map`、`/scan`、`/lidar_points` 和
-`/move_base/global_costmap/costmap`。
+应看到 `/map`、`/scan`、`/scan_filtered`、`/lidar_points`、
+`/move_base/global_costmap/costmap` 和 `/move_base/local_costmap/costmap`。
+`/scan_filtered` 由 `scan_circle_filter` 生成，是局部代价地图的数据源。
 
 ## 4. 在 RViz 中定点并查看路线
 
-1. 确认左侧 Displays 中 **Static Map**、**Global Costmap**、**Lidar Point Cloud**、
-   **Robot Body (0.27m x 0.16m)** 和 **Global Plan** 都已勾选。蓝色矩形仅代表
-   长 0.27 m、宽 0.16 m 的机器狗视觉替身。
+1. 确认左侧 Displays 中 **Static Map**、**Global Costmap**、**Local Costmap (1m x 1m)**、
+   **Lidar Point Cloud**、**Robot Body (0.27m x 0.16m)** 和 **Global Plan** 都已勾选。
+   蓝色矩形仅代表长 0.27 m、宽 0.16 m 的机器狗视觉替身；局部代价地图显示的是
+   以机器人为中心的 1 m × 1 m 滚动窗口，障碍物来自 `/scan_filtered`。
 2. 确认 RViz 顶部的 Fixed Frame 是 `map`。
 3. 点击工具栏的 **2D Nav Goal**。
 4. 在最新版 RICAM 赛场地图的浅色可通行区域按住鼠标左键拖动：按下位置是目标点，拖动方向是目标朝向。当前离线起点为 `(-0.70, 1.00)`，这是为 0.27 m × 0.16 m 的矩形替身选择的安全位置。
@@ -140,3 +142,31 @@ docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /r
 `/move_base` 恢复；此时在 rviz 用 2D Nav Goal 选点即进入 cym_planner 导航。
 注意：导航模式的 `init_x/init_y` 默认 (-0.70, 1.00)，若机器起点与建图原点不一致，
 用 `init_x:=0.0 init_y:=0.0` 等参数对齐。
+
+## 8. 定点导航的激光定位（jie_ware lidar_loc）
+
+导航模式下，`map -> odom` 变换由第三方包 `jie_ware` 的 `lidar_loc` 节点发布
+（源码位于 `catkin_ws/src/jie_ware`，来自 https://github.com/6-robot/jie_ware，
+GPL-2.0 许可，与仓库其余包的 BSD-3-Clause 分开管理）：
+
+1. `lidar_loc` 订阅 `/map` 与 `/scan_filtered`，把激光点与地图障碍物做逐帧扫描匹配，
+   解出机器人在 `map` 系下的位姿，再结合 `simple_odom` 的 `odom -> base_link`
+   里程计推算，发布带修正的 `map -> odom` TF。
+2. 启动时由 `initial_pose_publisher` 在 `/map` 到达后自动发布 `/initialpose`
+   （初始位姿取 `init_x/init_y`，默认 -0.70, 1.00）；也可在 rviz 用 **2D Pose Estimate**
+   手动修正。收到初始位姿约 30 帧激光后，`lidar_loc` 会自动调用
+   `move_base/clear_costmaps` 清掉启动期的陈旧障碍。
+3. **约束**：`lidar_loc` 收到 `/map` 时会先把估计重置到地图原点，因此不要单独
+   重启 `lidar_loc`，必须连同 `initial_pose_publisher` 一起重启，否则会一直卡在原点。
+4. 编译 `jie_ware` 需要 `cv_bridge` 与 OpenCV（ROS Noetic 默认自带）；机器容器若提示
+   缺少依赖，执行 `apt install ros-noetic-cv-bridge` 后重新 `catkin_make`。
+
+本地离线模拟默认使用静态 TF（`use_lidar_loc:=false`），因为模拟激光是通用房间
+数据、与 RICAM 地图不匹配，定位会发散；若要验证 `lidar_loc` 节点与 TF 链路本身，
+可追加参数：
+
+```bash
+bash wsl-simulation/start_offline_navigation.sh use_lidar_loc:=true
+```
+
+此时 rviz 里机器人会随着错误匹配漂移，属正常现象（仅链路验证）。
