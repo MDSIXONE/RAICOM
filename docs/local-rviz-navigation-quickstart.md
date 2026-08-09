@@ -129,7 +129,7 @@ rosrun map_server map_saver -f /root/catkin_ws/src/robot_dog_navigation/maps/ric
 ```
 
 把生成的 `ricam_arena_mapped.pgm/yaml` 同步回仓库
-`catkin_ws/src/robot_dog_navigation/maps/` 并提交。
+`robot-src/catkin_ws/src/robot_dog_navigation/maps/` 并提交。
 
 ### 7.4 切回导航模式
 
@@ -146,7 +146,7 @@ docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /r
 ## 8. 定点导航的激光定位（jie_ware lidar_loc）
 
 导航模式下，`map -> odom` 变换由第三方包 `jie_ware` 的 `lidar_loc` 节点发布
-（源码位于 `catkin_ws/src/jie_ware`，来自 https://github.com/6-robot/jie_ware，
+（源码位于 `robot-src/catkin_ws/src/jie_ware`，来自 https://github.com/6-robot/jie_ware，
 GPL-2.0 许可，与仓库其余包的 BSD-3-Clause 分开管理）：
 
 1. `lidar_loc` 订阅 `/map` 与 `/scan_filtered`，把激光点与地图障碍物做逐帧扫描匹配，

@@ -12,7 +12,7 @@
 
 `offline_navigation_arena.py` 是用于本地 `robot_dog_navigation` 演示的独立、可再生成
 Blender 场景源；对应的 ROS 占据栅格图位于
-`catkin_ws/src/robot_dog_navigation/maps/offline_navigation_arena.pgm`。该演示与赛场
+`robot-src/catkin_ws/src/robot_dog_navigation/maps/offline_navigation_arena.pgm`。该演示与赛场
 `ricam_arena/` 资产互不替代，也不会连接机器狗或 ROS Master。
 
 如需生成该演示的二进制 `.blend`，在安装 Blender 后执行：

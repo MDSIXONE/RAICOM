@@ -8,10 +8,9 @@
         "wsl-simulation",
         "technical-reports",
         "blender-maps",
-        "host-services",
         "datasets",
         "archive",
-        "catkin_ws"
+        "robot-src"
       ]
     }
   }

@@ -25,7 +25,7 @@ roslaunch ricam_arena_sim simulation.launch
 
 ## 本地离线 RViz 定点规划
 
-仓库根目录的 `catkin_ws/src/robot_dog_navigation` 是另一套轻量离线演示，使用模拟雷达、
+仓库根目录 `robot-src/` 下的 `catkin_ws/src/robot_dog_navigation` 是另一套轻量离线演示，使用模拟雷达、
 地图和官方 `global_planner/GlobalPlanner`。它固定使用回环地址
 `http://127.0.0.1:11311`，不连接机器狗，也没有 `/cmd_vel` 硬件订阅者。
 

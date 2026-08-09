@@ -242,34 +242,6 @@
 │       ├── blender/
 │       ├── gazebo/
 │       └── navigation/
-├── catkin_ws/
-│   └── src/
-│       ├── cym_planner/
-│       │   ├── config/
-│       │   ├── include/
-│       │   └── src/
-│       ├── jie_ware/
-│       │   ├── launch/
-│       │   └── src/
-│       ├── robot_dog_bringup/
-│       │   ├── launch/
-│       │   └── scripts/
-│       ├── robot_dog_lidar/
-│       │   ├── launch/
-│       │   └── src/
-│       ├── robot_dog_navigation/
-│       │   ├── config/
-│       │   ├── launch/
-│       │   ├── maps/
-│       │   ├── rviz/
-│       │   └── scripts/
-│       ├── robot_dog_teleop/
-│       │   ├── host/
-│       │   ├── launch/
-│       │   └── scripts/
-│       └── robot_dog_yolo_dataset/
-│           ├── launch/
-│           └── scripts/
 ├── competition-rules/
 ├── datasets/
 │   ├── ocr/
@@ -277,8 +249,6 @@
 ├── docs/
 │   ├── ai-records/
 │   └── technical/
-├── host-services/
-│   └── oumax-xgo/
 ├── robot-information/
 │   ├── camera/
 │   │   └── raspberry-pi-camera-module-3/
@@ -288,6 +258,37 @@
 │   │   └── esp32/
 │   └── course-resources/
 │       └── max/
+├── robot-src/
+│   ├── catkin_ws/
+│   │   └── src/
+│   │       ├── cym_planner/
+│   │       │   ├── config/
+│   │       │   ├── include/
+│   │       │   └── src/
+│   │       ├── jie_ware/
+│   │       │   ├── launch/
+│   │       │   └── src/
+│   │       ├── robot_dog_bringup/
+│   │       │   ├── launch/
+│   │       │   └── scripts/
+│   │       ├── robot_dog_lidar/
+│   │       │   ├── launch/
+│   │       │   └── src/
+│   │       ├── robot_dog_navigation/
+│   │       │   ├── config/
+│   │       │   ├── launch/
+│   │       │   ├── maps/
+│   │       │   ├── rviz/
+│   │       │   └── scripts/
+│   │       ├── robot_dog_teleop/
+│   │       │   ├── host/
+│   │       │   ├── launch/
+│   │       │   └── scripts/
+│   │       └── robot_dog_yolo_dataset/
+│   │           ├── launch/
+│   │           └── scripts/
+│   └── host-services/
+│       └── oumax-xgo/
 ├── scripts/
 ├── technical-reports/
 ├── tmp/
@@ -333,12 +334,14 @@ Blender 离线场地的可再生成源位于 `blender-maps/offline_navigation_ar
 
 ### 目录职责边界
 
-- `catkin_ws/src/`：机器狗 ROS 容器内编译运行的源码包（Catkin 工作空间）。
-- `wsl-simulation/src/`：WSL 离线仿真的 ROS 源码包，构建在 WSL ext4 工作区，不进 `catkin_ws`。
-- `host-services/<device>/`：机器端非 ROS 服务源码（如 `oumax-xgo/manual_control_server.py`，对应机器上 `/home/pi/oumax-xgo/`，systemd 服务直接运行）。此类源码独立于 ROS 容器，不属于 `catkin_ws`；修改后需同步部署到机器对应路径。
-- `catkin_ws/src/<pkg>/host/`：随 ROS 包部署的宿主机 shell 脚本与服务单元（部署到 `/usr/local/sbin/` 或 systemd），是包的部署配套，与 `host-services/` 的机器常驻服务源码区分。
+`robot-src/` 是机器源码包裹层，包含机器狗上运行的全部代码：
 
-AI 生成新源码时按上述边界落位：ROS 包内代码只允许写入 `catkin_ws/src/` 或 `wsl-simulation/src/`，机器端服务源码写入 `host-services/<device>/`，禁止在本仓库根目录或其他位置新建源码目录。
+- `robot-src/catkin_ws/src/`：机器狗 ROS 容器内编译运行的源码包（Catkin 工作空间）。
+- `robot-src/host-services/<device>/`：机器端非 ROS 服务源码（如 `oumax-xgo/manual_control_server.py`，对应机器上 `/home/pi/oumax-xgo/`，systemd 服务直接运行）。此类源码独立于 ROS 容器，不属于 `catkin_ws`；修改后需同步部署到机器对应路径。
+- `robot-src/catkin_ws/src/<pkg>/host/`：随 ROS 包部署的宿主机 shell 脚本与服务单元（部署到 `/usr/local/sbin/` 或 systemd），是包的部署配套，与 `host-services/` 的机器常驻服务源码区分。
+- `wsl-simulation/src/`：WSL 离线仿真的 ROS 源码包，构建在 WSL ext4 工作区，不进 `catkin_ws`。
+
+AI 生成新源码时按上述边界落位：机器相关代码只允许写入 `robot-src/catkin_ws/src/` 或 `robot-src/host-services/<device>/`，仿真代码写入 `wsl-simulation/src/`，禁止在本仓库根目录或其他位置新建源码目录。
 
 ## 离线导航仿真（WSL）
 

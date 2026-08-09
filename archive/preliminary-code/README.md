@@ -18,4 +18,4 @@
 
 ## 后续接入
 
-将功能迁移到比赛项目时，应先提炼接口与依赖，再在 `catkin_ws/src/` 中新建 ROS Noetic 包；不要把此目录直接放入 Catkin 工作区。
+将功能迁移到比赛项目时，应先提炼接口与依赖，再在 `robot-src/catkin_ws/src/` 中新建 ROS Noetic 包；不要把此目录直接放入 Catkin 工作区。

@@ -196,5 +196,5 @@ UTF-8 文本，格式为：
 - `scripts/pose_keyboard_teleop.py`：键盘姿态控制节点。
 - `launch/pose_keyboard_teleop.launch`：launch 文件与参数。
 - `host/launch_pose_keyboard_teleop.sh`：宿主机启动器。
-- `host-services/oumax-xgo/manual_control_server.py`：`kind=motor` 接口实现。
+- `robot-src/host-services/oumax-xgo/manual_control_server.py`：`kind=motor` 接口实现。
 - `README.md`：包总览与各键盘模式说明。

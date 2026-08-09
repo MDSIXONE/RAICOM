@@ -13,7 +13,7 @@ source /opt/ros/noetic/setup.bash
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-SOURCE_DIRECTORY="${REPOSITORY_ROOT}/catkin_ws/src"
+SOURCE_DIRECTORY="${REPOSITORY_ROOT}/robot-src/catkin_ws/src"
 WORKSPACE="${RAICOM_WSL_WORKSPACE:-${HOME}/raicom_ws}"
 
 if [ ! -f "${SOURCE_DIRECTORY}/CMakeLists.txt" ]; then

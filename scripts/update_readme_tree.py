@@ -15,10 +15,10 @@ START_MARKER = "<!-- PROJECT_STRUCTURE_TREE:START -->"
 END_MARKER = "<!-- PROJECT_STRUCTURE_TREE:END -->"
 IGNORED_NAMES = {".agents", ".git", ".github", "__pycache__"}
 IGNORED_PREFIXES = (
-    "catkin_ws/build",
-    "catkin_ws/devel",
-    "catkin_ws/install",
-    "catkin_ws/log",
+    "robot-src/catkin_ws/build",
+    "robot-src/catkin_ws/devel",
+    "robot-src/catkin_ws/install",
+    "robot-src/catkin_ws/log",
     "robot-information/private",
 )
 
