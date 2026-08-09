@@ -17,13 +17,19 @@
 
 ## 当前内容
 
-
 - `AGENTS.md`：仓库贡献规范及智能体协作要求。
-- `.agents/skills/project-memory-records/`：随仓库同步的 AI 工作记录技能。
-- `technical-reports/`：技术报告、阶段总结和赛后复盘。
-- `docs/ai-records/`：跨对话的代码改动、犯错和失败方案记录。
+- `.agents/skills/`：随仓库同步的 AI 技能（工作记录、提交规范）。
+- `archive/`：设备源码快照与历史归档，仅作存档参考。
+- `blender-maps/`：离线场地的可再生成 Blender 源及对应 ROS 地图。
 - `competition-rules/`：赛事规则 PDF 及 [规则摘要](competition-rules/2026睿抗国赛规则-物流配送挑战赛-足式4.2-摘要.md)。
+- `datasets/`：YOLO/OCR 数据集说明与小型样例。
+- `docs/`：跨对话的代码改动、犯错和失败方案记录，以及技术文档。
 - `robot-information/`：机器狗统一平台约束、上位机/摄像头/下位机参考资料及下载清单。
+- `robot-src/`：机器狗上运行的全部源码（ROS 包与机器端非 ROS 服务）。
+- `scripts/`：仓库辅助脚本（如自动更新结构树）。
+- `technical-reports/`：技术报告、阶段总结和赛后复盘。
+- `tmp/`：临时文件，不入库内容请忽略。
+- `wsl-simulation/`：WSL 离线仿真的 ROS 源码包。
 
 ## 目录结构
 
@@ -33,299 +39,16 @@
 ```text
 项目根目录/
 ├── archive/
-│   ├── full-device-source/
-│   │   ├── home-pi/
-│   │   │   ├── oumax-xgo/
-│   │   │   └── RaspberryPi-CM5/
-│   │   │       ├── common/
-│   │   │       │   ├── demos/
-│   │   │       │   │   ├── AI_gym/
-│   │   │       │   │   ├── mcp_server/
-│   │   │       │   │   ├── realtime_dialog/
-│   │   │       │   │   ├── sample/
-│   │   │       │   │   ├── src/
-│   │   │       │   │   └── WIFI/
-│   │   │       │   ├── language/
-│   │   │       │   └── volume/
-│   │   │       ├── robots/
-│   │   │       │   ├── Dog_LM/
-│   │   │       │   │   ├── demos/
-│   │   │       │   │   │   ├── face_classification/
-│   │   │       │   │   │   │   └── src/
-│   │   │       │   │   │   │       ├── utils/
-│   │   │       │   │   │   │       └── web/
-│   │   │       │   │   │   ├── follow_person/
-│   │   │       │   │   │   ├── speech/
-│   │   │       │   │   │   │   └── volcengine_binary_demo/
-│   │   │       │   │   │   │       └── protocols/
-│   │   │       │   │   │   ├── xiaozhi_test/
-│   │   │       │   │   │   │   ├── config/
-│   │   │       │   │   │   │   └── src/
-│   │   │       │   │   │   │       ├── audio_codecs/
-│   │   │       │   │   │   │       ├── audio_processing/
-│   │   │       │   │   │   │       ├── constants/
-│   │   │       │   │   │   │       ├── iot/
-│   │   │       │   │   │   │       │   └── things/
-│   │   │       │   │   │   │       ├── network/
-│   │   │       │   │   │   │       └── utils/
-│   │   │       │   │   │   └── YDLidar-SDK/
-│   │   │       │   │   │       ├── core/
-│   │   │       │   │   │       │   ├── base/
-│   │   │       │   │   │       │   ├── common/
-│   │   │       │   │   │       │   ├── json/
-│   │   │       │   │   │       │   ├── math/
-│   │   │       │   │   │       │   ├── network/
-│   │   │       │   │   │       │   └── serial/
-│   │   │       │   │   │       │       └── impl/
-│   │   │       │   │   │       │           ├── unix/
-│   │   │       │   │   │       │           └── windows/
-│   │   │       │   │   │       ├── csharp/
-│   │   │       │   │   │       │   └── examples/
-│   │   │       │   │   │       ├── doc/
-│   │   │       │   │   │       │   ├── FAQs/
-│   │   │       │   │   │       │   ├── howto/
-│   │   │       │   │   │       │   ├── quickstart/
-│   │   │       │   │   │       │   └── tutorials/
-│   │   │       │   │   │       ├── examples/
-│   │   │       │   │   │       ├── python/
-│   │   │       │   │   │       │   ├── examples/
-│   │   │       │   │   │       │   └── test/
-│   │   │       │   │   │       ├── src/
-│   │   │       │   │   │       │   └── filters/
-│   │   │       │   │   │       ├── startup/
-│   │   │       │   │   │       └── test/
-│   │   │       │   │   └── flacksocket/
-│   │   │       │   │       ├── static/
-│   │   │       │   │       └── templates/
-│   │   │       │   ├── Mini3W_W/
-│   │   │       │   │   ├── demos/
-│   │   │       │   │   │   ├── face_classification/
-│   │   │       │   │   │   │   └── src/
-│   │   │       │   │   │   │       ├── utils/
-│   │   │       │   │   │   │       └── web/
-│   │   │       │   │   │   ├── follow_person/
-│   │   │       │   │   │   ├── speech/
-│   │   │       │   │   │   │   └── volcengine_binary_demo/
-│   │   │       │   │   │   │       └── protocols/
-│   │   │       │   │   │   ├── xiaozhi_test/
-│   │   │       │   │   │   │   ├── config/
-│   │   │       │   │   │   │   └── src/
-│   │   │       │   │   │   │       ├── audio_codecs/
-│   │   │       │   │   │   │       ├── audio_processing/
-│   │   │       │   │   │   │       ├── constants/
-│   │   │       │   │   │   │       ├── iot/
-│   │   │       │   │   │   │       │   └── things/
-│   │   │       │   │   │   │       ├── network/
-│   │   │       │   │   │   │       └── utils/
-│   │   │       │   │   │   └── YDLidar-SDK/
-│   │   │       │   │   │       ├── core/
-│   │   │       │   │   │       │   ├── base/
-│   │   │       │   │   │       │   ├── common/
-│   │   │       │   │   │       │   ├── json/
-│   │   │       │   │   │       │   ├── math/
-│   │   │       │   │   │       │   ├── network/
-│   │   │       │   │   │       │   └── serial/
-│   │   │       │   │   │       │       └── impl/
-│   │   │       │   │   │       │           ├── unix/
-│   │   │       │   │   │       │           └── windows/
-│   │   │       │   │   │       ├── csharp/
-│   │   │       │   │   │       │   └── examples/
-│   │   │       │   │   │       ├── doc/
-│   │   │       │   │   │       │   ├── FAQs/
-│   │   │       │   │   │       │   ├── howto/
-│   │   │       │   │   │       │   ├── quickstart/
-│   │   │       │   │   │       │   └── tutorials/
-│   │   │       │   │   │       ├── examples/
-│   │   │       │   │   │       ├── python/
-│   │   │       │   │   │       │   ├── examples/
-│   │   │       │   │   │       │   └── test/
-│   │   │       │   │   │       ├── src/
-│   │   │       │   │   │       │   └── filters/
-│   │   │       │   │   │       ├── startup/
-│   │   │       │   │   │       └── test/
-│   │   │       │   │   └── flacksocket/
-│   │   │       │   │       ├── static/
-│   │   │       │   │       └── templates/
-│   │   │       │   └── Rider_R/
-│   │   │       │       ├── demos/
-│   │   │       │       │   ├── face_classification/
-│   │   │       │       │   │   └── src/
-│   │   │       │       │   │       ├── utils/
-│   │   │       │       │   │       └── web/
-│   │   │       │       │   ├── follow_person/
-│   │   │       │       │   ├── sample/
-│   │   │       │       │   ├── speech/
-│   │   │       │       │   │   └── volcengine_binary_demo/
-│   │   │       │       │   │       └── protocols/
-│   │   │       │       │   └── xiaozhi_test/
-│   │   │       │       │       ├── config/
-│   │   │       │       │       └── src/
-│   │   │       │       │           ├── audio_codecs/
-│   │   │       │       │           ├── audio_processing/
-│   │   │       │       │           ├── constants/
-│   │   │       │       │           ├── iot/
-│   │   │       │       │           │   └── things/
-│   │   │       │       │           ├── network/
-│   │   │       │       │           └── utils/
-│   │   │       │       └── flacksocket/
-│   │   │       │           ├── static/
-│   │   │       │           └── templates/
-│   │   │       └── uiutils/
-│   │   │           └── src/
-│   │   │               └── uiutils/
-│   │   └── systemd/
-│   └── preliminary-code/
-│       ├── oumax-xgo/
-│       └── xgo-cm5/
-│           ├── common/
-│           │   ├── demos/
-│           │   │   ├── AI_gym/
-│           │   │   ├── mcp_server/
-│           │   │   ├── realtime_dialog/
-│           │   │   ├── sample/
-│           │   │   ├── src/
-│           │   │   └── WIFI/
-│           │   ├── language/
-│           │   └── volume/
-│           └── robots/
-│               └── Dog_LM/
-│                   ├── demos/
-│                   │   ├── face_classification/
-│                   │   │   └── src/
-│                   │   │       ├── utils/
-│                   │   │       └── web/
-│                   │   ├── follow_person/
-│                   │   ├── speech/
-│                   │   │   └── volcengine_binary_demo/
-│                   │   │       └── protocols/
-│                   │   ├── xiaozhi_test/
-│                   │   │   ├── config/
-│                   │   │   └── src/
-│                   │   │       ├── audio_codecs/
-│                   │   │       ├── audio_processing/
-│                   │   │       ├── constants/
-│                   │   │       ├── iot/
-│                   │   │       │   └── things/
-│                   │   │       ├── network/
-│                   │   │       └── utils/
-│                   │   └── YDLidar-SDK/
-│                   │       ├── core/
-│                   │       │   ├── base/
-│                   │       │   ├── common/
-│                   │       │   ├── json/
-│                   │       │   ├── math/
-│                   │       │   ├── network/
-│                   │       │   └── serial/
-│                   │       │       └── impl/
-│                   │       │           ├── unix/
-│                   │       │           └── windows/
-│                   │       ├── csharp/
-│                   │       │   └── examples/
-│                   │       ├── doc/
-│                   │       │   ├── FAQs/
-│                   │       │   ├── howto/
-│                   │       │   ├── quickstart/
-│                   │       │   └── tutorials/
-│                   │       ├── examples/
-│                   │       ├── python/
-│                   │       │   ├── examples/
-│                   │       │   └── test/
-│                   │       ├── src/
-│                   │       │   └── filters/
-│                   │       ├── startup/
-│                   │       └── test/
-│                   └── flacksocket/
-│                       ├── static/
-│                       └── templates/
 ├── blender-maps/
-│   └── ricam_arena/
-│       ├── blender/
-│       ├── gazebo/
-│       └── navigation/
 ├── competition-rules/
 ├── datasets/
-│   ├── ocr/
-│   └── yolo/
 ├── docs/
-│   ├── ai-records/
-│   │   └── mistakes/
-│   └── technical/
 ├── robot-information/
-│   ├── camera/
-│   │   └── raspberry-pi-camera-module-3/
-│   ├── compute/
-│   │   └── raspberry-pi-cm4/
-│   ├── control/
-│   │   └── esp32/
-│   └── course-resources/
-│       └── max/
 ├── robot-src/
-│   ├── catkin_ws/
-│   │   └── src/
-│   │       ├── cym_planner/
-│   │       │   ├── config/
-│   │       │   ├── include/
-│   │       │   └── src/
-│   │       ├── jie_ware/
-│   │       │   ├── launch/
-│   │       │   └── src/
-│   │       ├── robot_dog_bringup/
-│   │       │   ├── launch/
-│   │       │   └── scripts/
-│   │       ├── robot_dog_lidar/
-│   │       │   ├── launch/
-│   │       │   └── src/
-│   │       ├── robot_dog_navigation/
-│   │       │   ├── config/
-│   │       │   ├── launch/
-│   │       │   ├── maps/
-│   │       │   ├── rviz/
-│   │       │   └── scripts/
-│   │       ├── robot_dog_teleop/
-│   │       │   ├── host/
-│   │       │   ├── launch/
-│   │       │   └── scripts/
-│   │       └── robot_dog_yolo_dataset/
-│   │           ├── launch/
-│   │           └── scripts/
-│   └── host-services/
-│       └── oumax-xgo/
 ├── scripts/
 ├── technical-reports/
 ├── tmp/
 └── wsl-simulation/
-    └── src/
-        ├── ball_spotter/
-        │   ├── launch/
-        │   ├── models/
-        │   ├── scripts/
-        │   └── test/
-        ├── cym_planner/
-        │   ├── config/
-        │   ├── include/
-        │   │   └── cym_planner/
-        │   ├── src/
-        │   └── test/
-        ├── mini2_description/
-        │   ├── config/
-        │   ├── launch/
-        │   ├── meshes/
-        │   ├── scripts/
-        │   ├── test/
-        │   └── urdf/
-        ├── ricam_arena_sim/
-        │   ├── config/
-        │   ├── launch/
-        │   ├── maps/
-        │   ├── meshes/
-        │   ├── rviz/
-        │   ├── scripts/
-        │   ├── test/
-        │   └── worlds/
-        └── ricam_dataset_capture/
-            ├── launch/
-            ├── scripts/
-            └── test/
 ```
 <!-- PROJECT_STRUCTURE_TREE:END -->
 

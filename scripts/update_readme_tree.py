@@ -69,7 +69,6 @@ def render_tree(directories: Set[Path]) -> str:
             is_last = index == len(names) - 1
             connector = "└── " if is_last else "├── "
             lines.append(f"{prefix}{connector}{name}/")
-            render(node[name], prefix + ("    " if is_last else "│   "))
 
     render(tree)
     return "\n".join(lines)
