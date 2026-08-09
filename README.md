@@ -248,6 +248,7 @@
 │   └── yolo/
 ├── docs/
 │   ├── ai-records/
+│   │   └── mistakes/
 │   └── technical/
 ├── robot-information/
 │   ├── camera/
