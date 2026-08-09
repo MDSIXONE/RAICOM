@@ -2,12 +2,11 @@
   "project_type": "比赛",
   "created_folders": [
     "competition-rules",
-    "catkin_ws",
+    "robot-src",
     "docs",
     "robot-information",
     "scripts",
     "technical-reports",
-    "host-services",
     "blender-maps",
     "wsl-simulation",
     "datasets",
@@ -20,5 +19,6 @@
     "github_commit": true,
     "context7_mcp": true
   },
+  "github_commit_source": "project-custom (.agents/skills/github-commit, 保留项目定制版，未使用 workspace-init 内置版)",
   "initialized_at": "2026-08-09"
 }
