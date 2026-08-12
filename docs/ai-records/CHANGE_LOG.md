@@ -2,6 +2,33 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-11｜四轮通道顺序校正
+
+- 状态：进行中
+- 目标：按实机观察修正轮控数据通道顺序，使左/右转分别让物理左侧和右侧的两个轮子同组反向运行。
+- 影响文件：`robot-src/host-services/oumax-xgo/manual_control_server.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`。
+- 实施记录：待更新。
+- 验证：待更新。
+- 遗留风险：待更新。
+
+## 2026-08-11｜四动力轮差速转向映射
+
+- 状态：改动完成
+- 目标：按实机确认的四个主动轮实现轮式左/右转：左转左侧两轮向后、右侧两轮向前；右转相反。
+- 影响文件：`robot-src/host-services/oumax-xgo/manual_control_server.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`gamepad_wheel_speeds` 改为四轮差速混合，输出顺序为左前、右前、左后、右后；正 yaw 输出 `[-,+,-,+]`（左转），负 yaw 输出 `[+,-,+,-]`（右转），同时移除右侧为被动轮的错误假设。已备份并部署到机器 `/home/pi/oumax-xgo/manual_control_server.py`，备份为 `/home/pi/oumax-xgo/manual_control_server.py.20260811-wheel4-turn.bak`。
+- 验证：本地及机器端 Python 编译通过；映射断言确认左转 `[-1.15,1.15,-1.15,1.15]`、右转 `[1.15,-1.15,1.15,-1.15]`、直行四轮同向；部署后原厂主服务为 active、手控服务为 inactive，因此未发送新的运动指令。
+- 遗留风险：轮式转向的正负方向已按用户定义映射，首次在实际地面使用仍应短时观察机身朝向；手控服务将在下一次控制权交接后加载新代码。
+
+## 2026-08-09｜实机部署：jie_ware 定位 + 键盘姿态控制
+
+- 状态：改动完成
+- 目标：把 jie_ware 激光定位集成（lidar_loc/initial_pose_publisher/scan filter 三 launch 改动）与键盘姿态控制（pose_keyboard_teleop + kind=motor 接口）传输到机器狗（192.168.137.157）部署并编译。
+- 影响文件：机器 `/home/pi/ros_ws/src/{jie_ware,robot_dog_navigation,robot_dog_bringup,robot_dog_teleop}/`、`/home/pi/oumax-xgo/manual_control_server.py`、`/usr/local/sbin/raicom-launch-pose-keyboard`；仓库 `docs/ai-records/CHANGE_LOG.md`。备份：机器 `/home/pi/ros_ws/backups/deploy-20260809-jie-ware-pose/`。
+- 实施记录：scp 上传 jie_ware 包、navigation/bringup/teleop 差异文件与 manual_control_server.py；机器上 `sed -i 's/\r$//'` 修复 Windows scp 引入的 CRLF 行尾（install_host_handover.sh、launch_pose_keyboard_teleop.sh）；`sudo bash install_host_handover.sh --install-only` 注册 `raicom-launch-pose-keyboard`；容器内 `catkin_make` 编译成功（jie_ware 三节点 + 脚本 wrapper）。顺带修复两个机器侧历史误传：工作空间根 `/home/pi/ros_ws/CMakeLists.txt`（2026-08-07 误放的 catkin 顶层模板，挡住 catkin_make，移至 backups/CMakeLists.txt.stray-20260807-root）与 WSL 专用包 `ball_spotter/`（无 CMakeLists.txt 导致 catkin 配置失败，移至 backups/ball_spotter-stray-wsl-pkg-20260809）。
+- 验证：devel 空间 `jie_ware/{lidar_loc,costmap_cleaner,lidar_filter_node}` 可执行存在、`initial_pose_publisher.py` 已安装；`roslaunch robot_dog_bringup robot_dog_main.launch --nodes` 解析出 map_server/lidar_loc/initial_pose_publisher/move_base；`pose_keyboard_teleop.launch enable_motion:=false --nodes` 解析出 /robot_dog_pose_keyboard_teleop；两个新 Python 脚本容器内 py_compile 通过；宿主机 manual_control_server.py py_compile 通过且 `kind=motor`/`MOTOR_RANGES` 就位。未切换串口所有权（oumax-manual.service 保持 inactive，raicom-original-main.service 维持 active），新版 manual_control_server 将在下次 launch_pose_keyboard_teleop.sh acquire 时生效。
+- 遗留风险：姿态键盘首次实机使用须先按 `m` 回中（本地跟踪角可能与舵机实际角漂移），并在站稳、净空 1 m 场地以最小细步（w/s 1°）逐关节验证方向；`kind=motor` 参数校验已静态验证，实际动关节行为待实机；lidar_loc 实机首次导航需确认 initialpose 落点与实际位置偏差在收敛域内（±1 栅格/±1° 迭代），不匹配时用 rviz 2D Pose Estimate 修正后再发目标点；lidar_loc 不可单独重启（会卡地图原点）。
+
 ## 2026-08-09｜定点导航接入激光定位（jie_ware lidar_loc）与局部代价地图
 
 - 状态：改动完成

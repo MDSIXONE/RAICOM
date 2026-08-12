@@ -112,7 +112,7 @@ def wheel_speeds(axis: str, value: float) -> list[float]:
     if axis == "y":
         return [-speed, speed, speed, -speed]
     if axis == "yaw":
-        return [-speed, speed, -speed, speed]
+        return [-speed, speed, speed, -speed]
     raise ValueError(f"unknown wheel motion axis: {axis}")
 
 
@@ -221,11 +221,12 @@ def is_wheel_dog(bot: Any) -> bool:
 
 
 def gamepad_wheel_speeds(x: float, y: float, yaw: float) -> list[float]:
-    # This unit has only the LEFT pair (lf, lr) driven; rf/rr are free-spinning
-    # brushless passives. Rotate by running lf vs lr in opposition.
-    lf = x - yaw
-    lr = x + yaw
-    values = [lf, 0.0, lr, 0.0]
+    # Wheel-control channel order is [left-front, right-front, right-rear,
+    # left-rear]. Positive yaw turns left: the physical left pair reverses and
+    # the physical right pair advances; negative yaw does the opposite.
+    left = x - yaw
+    right = x + yaw
+    values = [left, right, right, left]
     peak = max(1.0, max(abs(v) for v in values))
     return [round(v / peak * 1.15, 3) for v in values]
 
@@ -235,6 +236,7 @@ def clamp(value: float, low: float, high: float) -> float:
 
 
 def send_wheel_control(bot: Any, speeds: list[float]) -> None:
+    # Hardware channel order: [left-front, right-front, right-rear, left-rear].
     values = [float(v) for v in list(speeds)[:4]]
     values += [0.0] * (4 - len(values))
     if hasattr(bot, "wheel_control"):
