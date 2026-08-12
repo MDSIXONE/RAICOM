@@ -1,0 +1,49 @@
+<launch>
+  <!-- 自动对准夹球：趴下 → 差速轮视觉对准球心 → 放臂夹球。
+       无默认 enable_motion：真实运动必须在现场安全确认后显式置 true。 -->
+  <arg name="enable_motion" doc="Set exactly true only after the on-site safety checklist is complete."/>
+  <arg name="model" default="/root/catkin_ws/models/best.onnx"
+       doc="YOLOv8 ONNX 球检测模型路径"/>
+  <arg name="stream_url" default="http://127.0.0.1:8090/stream.mjpg"/>
+  <arg name="conf" default="0.5"/>
+  <arg name="iou" default="0.45"/>
+  <arg name="names" default="red_ball,blue_ball,green_ball"/>
+  <arg name="classes" default=""/>
+  <arg name="tol_x" default="20.0" doc="水平对准容差（像素）"/>
+  <arg name="tol_y" default="20.0" doc="垂直对准容差（像素）"/>
+  <arg name="wheel_turn_speed" default="0.6" doc="差速轮转向脉冲速度"/>
+  <arg name="wheel_move_speed" default="0.8" doc="差速轮前后移动脉冲速度"/>
+  <arg name="wheel_pulse_time" default="0.4" doc="每个轮脉冲时长（秒）"/>
+  <arg name="wheel_delay" default="0.8" doc="脉冲间隔（秒），等检测收敛"/>
+  <arg name="yaw_direction" default="1.0" doc="转向方向；实测反时改 -1"/>
+  <arg name="x_direction" default="1.0" doc="前后移动方向；实测反时改 -1"/>
+  <arg name="joint_delay" default="0.5" doc="趴下关节命令间隔（秒）"/>
+  <arg name="arm_delay" default="0.6" doc="机械臂动作间隔（秒）"/>
+  <arg name="align_timeout" default="180.0" doc="对准超时（秒）"/>
+  <arg name="good_frames" default="3" doc="连续多少帧对准视为完成"/>
+  <arg name="max_worsen" default="3" doc="连续多少次脉冲误差增大即中止"/>
+
+  <node pkg="robot_dog_teleop" type="ball_align_grab.py"
+        name="robot_dog_ball_align_grab" output="screen" required="true">
+    <param name="enable_motion" value="$(arg enable_motion)"/>
+    <param name="model" value="$(arg model)"/>
+    <param name="stream_url" value="$(arg stream_url)"/>
+    <param name="conf" value="$(arg conf)"/>
+    <param name="iou" value="$(arg iou)"/>
+    <param name="names" value="$(arg names)"/>
+    <param name="classes" value="$(arg classes)"/>
+    <param name="tol_x" value="$(arg tol_x)"/>
+    <param name="tol_y" value="$(arg tol_y)"/>
+    <param name="wheel_turn_speed" value="$(arg wheel_turn_speed)"/>
+    <param name="wheel_move_speed" value="$(arg wheel_move_speed)"/>
+    <param name="wheel_pulse_time" value="$(arg wheel_pulse_time)"/>
+    <param name="wheel_delay" value="$(arg wheel_delay)"/>
+    <param name="yaw_direction" value="$(arg yaw_direction)"/>
+    <param name="x_direction" value="$(arg x_direction)"/>
+    <param name="joint_delay" value="$(arg joint_delay)"/>
+    <param name="arm_delay" value="$(arg arm_delay)"/>
+    <param name="align_timeout" value="$(arg align_timeout)"/>
+    <param name="good_frames" value="$(arg good_frames)"/>
+    <param name="max_worsen" value="$(arg max_worsen)"/>
+  </node>
+</launch>

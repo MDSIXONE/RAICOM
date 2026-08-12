@@ -14,6 +14,7 @@ catkin_install_python(PROGRAMS
   scripts/physical_keyboard_continuous.py
   scripts/arm_keyboard_teleop.py
   scripts/pose_keyboard_teleop.py
+  scripts/ball_align_grab.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
