@@ -17,7 +17,9 @@
     "agents_md": true,
     "project_memory_records": true,
     "github_commit": true,
-    "context7_mcp": true
+    "context7_mcp": true,
+    "project_lingo": true,
+    "project_index": true
   },
   "github_commit_source": "project-custom (.agents/skills/github-commit, 保留项目定制版，未使用 workspace-init 内置版)",
   "initialized_at": "2026-08-09"
