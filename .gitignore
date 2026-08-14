@@ -24,3 +24,10 @@ __pycache__/
 
 # Sensitive machine information
 /robot-information/private/
+
+# Training artifacts
+/runs/
+/yolo*.pt
+
+# Robot disk images (too large to track)
+/dogimage/

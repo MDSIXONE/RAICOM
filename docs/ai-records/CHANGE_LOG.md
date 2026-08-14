@@ -2,6 +2,24 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-15｜地图 A/B/C/D 字母 YOLO 模型：自动标注训练并部署
+
+- 状态：改动完成
+- 目标：用户实拍 3000 张地图照片后，自动完成标注、训练 YOLO 字母检测模型并部署到机器狗。
+- 影响文件：新增 `scripts/auto_label_abcd.py`、`tmp/verify_letters.py`（机器端验证脚本）；机器 `/home/pi/ros_ws/models/letters.onnx`；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：EasyOCR 全量扫描 3000 张，仅 622 张（20.7%）拍到 A/B/C/D 字母（0.2s 连拍+狗走动导致大量空帧），自动生成 YOLO 标注（allowlist=ABCD、conf≥0.5、归一化中心坐标）；无标注的 2378 张移入 `images/unlabeled/`；9:1 切分（train 559/val 63）；yolov8n 训练 150 epochs（早停于 136，batch=16 曾 CUDA OOM，改 8+disk cache 后通过）；mAP50=0.877（A=0.968 B=0.993 C=0.735 D=0.810）；导出 ONNX（640, opset 12）部署为 `/home/pi/ros_ws/models/letters.onnx`（与球的 best.onnx 并存）。
+- 验证：机器端 xgovenv 加载 onnx 成功（输入 1x3x640x640，输出 1x8x8400），Picamera2 实拍推理 0.2s/帧；验证时相机流服务（8090）需先停，验证后已恢复 active。
+- 遗留风险：自动标注质量受 EasyOCR 限制，C 类 mAP 偏低（0.735）；622 张中 B 类样本最多（313），类别不均衡；采集时相机流仅 640x360，远处字母分辨率不足。建议后续人工抽查标注、针对性补拍 C/D 与远景样本再微调。
+
+## 2026-08-14｜地图 A/B/C/D 字母 YOLO 数据采集与训练流水线
+
+- 状态：改动完成
+- 目标：用机器狗相机实拍比赛地图，建立 A/B/C/D 字母四类 YOLO 数据集，并打通采集→标注→切分→训练→导出 ONNX→部署机器端的完整流程。
+- 影响文件：新增 `scripts/capture_map_photos.py`、`scripts/split_yolo_dataset.py`、`scripts/train_abcd_yolo.py`、`docs/map-abcd-yolo-workflow.md`；`datasets/yolo/abcd/`（data.yaml、classes.txt，不入库）；`.agents/skills/project-index/INDEX.md`；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：机器端启用 `oumax-camera.service`（Picamera2 MJPEG 流，端口 8090，640x360），本机脚本直接解析 multipart 流抓帧，默认每秒 1 张存至 `datasets/yolo/abcd/images/`；训练脚本用 ultralytics（yolov8n）在 RTX 4050 上训练并导出 ONNX（imgsz=640, opset=12），部署目标 `/home/pi/ros_ws/models/letters.onnx`。
+- 验证：`--probe` 单帧实测抓取成功（640x360 JPEG）；CUDA 可用（torch 2.11.0+cu126）；采集进行中。
+- 遗留风险：训练效果依赖标注质量与样本覆盖（远近/斜视角度）；流分辨率 640x360 对远处字母可能偏小，若识别率不足需提高流分辨率或贴近拍摄。
+
 ## 2026-08-14｜抓球程序入 catkin：新建 robot_dog_ball_grab 包
 
 - 状态：改动完成

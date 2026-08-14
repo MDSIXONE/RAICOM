@@ -51,6 +51,7 @@ RAICOM/
 | 定位 | `robot-src/catkin_ws/src/jie_ware` | 激光定位 lidar_loc、雷达滤波、costmap 清理（C++ 节点 + launch） | - |
 | 遥操作 | `robot-src/catkin_ws/src/robot_dog_teleop` | 键盘脉冲/物理键盘/pose/机械臂/球对齐抓取等多种遥操作模式 + 宿主机 systemd/handover 部署 | - |
 | YOLO 数据采集 | `robot-src/catkin_ws/src/robot_dog_yolo_dataset` | 定时间隔抓图用于 YOLO 数据集（yolo_image_collector.py） | - |
+| 地图字母采集训练 | `scripts/capture_map_photos.py` + `datasets/yolo/abcd/` | 从机器狗 8090 流抓帧采集地图照片，YOLO 训练 A/B/C/D（配套 split/train 脚本与工作流文档） | `docs/map-abcd-yolo-workflow.md` |
 | 抓球任务 | `robot-src/catkin_ws/src/robot_dog_ball_grab` | 本次抓球任务代码包：机器端独立 YOLO 抓球程序（ball_yolo_grab.py，厂商硬件接口 + ONNX 球模型） | - |
 | 机器端非 ROS 服务 | `robot-src/host-services/oumax-xgo/manual_control_server.py` | 机器上 /home/pi/oumax-xgo 的手动控制常驻服务（systemd 运行） | - |
 | 离线场地地图 | `blender-maps/ricam_arena/navigation/` | 10cm 栅格地图（pgm/yaml/json/png，含编号网格） | - |
