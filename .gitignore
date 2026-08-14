@@ -19,6 +19,7 @@ __pycache__/
 /datasets/yolo/*
 !/datasets/yolo/.gitkeep
 !/datasets/yolo/best.onnx
+!/datasets/yolo/abcd/
 /datasets/ocr/*
 !/datasets/ocr/.gitkeep
 
@@ -26,8 +27,11 @@ __pycache__/
 /robot-information/private/
 
 # Training artifacts
-/runs/
+/runs/*
+!/runs/abcd/
 /yolo*.pt
+!/yolo26n.pt
+!/yolov8n.pt
 
 # Robot disk images (too large to track)
 /dogimage/

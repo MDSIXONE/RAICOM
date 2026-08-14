@@ -1,0 +1,11 @@
+# YOLOv8 训练配置：地图 A/B/C/D 字母检测
+# 运行训练前把 images 按 train/val 拆分后填写实际路径
+train: D:/睿抗/RAICOM/datasets/yolo/abcd/images/train
+val: D:/睿抗/RAICOM/datasets/yolo/abcd/images/val
+
+nc: 4
+names:
+  0: A
+  1: B
+  2: C
+  3: D

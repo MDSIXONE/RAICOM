@@ -2,6 +2,14 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-15｜ABCD 字母 YOLO 数据集与训练产物全量入库
+
+- 状态：改动完成
+- 目标：按用户要求把地图字母检测的完整数据集与训练产物推送到仓库（不再“不入库”），与球模型 best.onnx 一样入库。
+- 影响文件：`datasets/yolo/abcd/`（images 3000 张 jpg + 622 npy + EasyOCR 标注 txt、data.yaml、classes.txt）、`runs/abcd/`（train/train2 训练产物含 best.onnx/best.pt/last.pt 与曲线图）、根目录预训练权重 `yolo26n.pt`、`yolov8n.pt`；`.gitignore` 白名单调整（abcd/、runs/abcd/、根目录 yolo*.pt）。
+- 验证：git 暂存区确认新增约 480MB 文件全部纳入；分两个 commit 推送 origin/main（先小文件后图片，降低大体积传输中断风险）。
+- 遗留风险：仓库体积增大约 480MB，clone/拉取变慢；后续重新采集或训练产物仍会被 `/runs/*`、`/datasets/yolo/*` 默认忽略，只有白名单路径入库。
+
 ## 2026-08-15｜地图 A/B/C/D 字母 YOLO 模型：自动标注训练并部署
 
 - 状态：改动完成
