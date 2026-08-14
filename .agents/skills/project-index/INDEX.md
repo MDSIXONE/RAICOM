@@ -1,6 +1,6 @@
 # RAICOM 睿抗机器人大赛智能配送项目 结构索引
 
-- 更新时间：2026-08-13
+- 更新时间：2026-08-14
 
 ## 总体结构
 
@@ -29,7 +29,7 @@ RAICOM/
 │   ├── private/               # 本机敏感资料（device-access.md，不入库）
 │   └── actual-hardware-observations.md / download-manifest.md / README.md
 ├── robot-src/                 # ★ 机器端全部源码（唯一机器代码写入区）
-│   ├── catkin_ws/src/         # 机器狗 ROS 包（Catkin 工作空间，容器内编译运行）
+│   ├── catkin_ws/src/         # 机器狗 ROS 包（Catkin 工作空间，容器内编译运行；本次比赛任务代码存放地）
 │   └── host-services/<device>/ # 机器端非 ROS 常驻服务（如 oumax-xgo/manual_control_server.py）
 ├── scripts/                   # 仓库辅助脚本（update_readme_tree.py）
 ├── technical-reports/         # 技术报告、阶段总结、赛后复盘（空）
@@ -51,6 +51,7 @@ RAICOM/
 | 定位 | `robot-src/catkin_ws/src/jie_ware` | 激光定位 lidar_loc、雷达滤波、costmap 清理（C++ 节点 + launch） | - |
 | 遥操作 | `robot-src/catkin_ws/src/robot_dog_teleop` | 键盘脉冲/物理键盘/pose/机械臂/球对齐抓取等多种遥操作模式 + 宿主机 systemd/handover 部署 | - |
 | YOLO 数据采集 | `robot-src/catkin_ws/src/robot_dog_yolo_dataset` | 定时间隔抓图用于 YOLO 数据集（yolo_image_collector.py） | - |
+| 抓球任务 | `robot-src/catkin_ws/src/robot_dog_ball_grab` | 本次抓球任务代码包：机器端独立 YOLO 抓球程序（ball_yolo_grab.py，厂商硬件接口 + ONNX 球模型） | - |
 | 机器端非 ROS 服务 | `robot-src/host-services/oumax-xgo/manual_control_server.py` | 机器上 /home/pi/oumax-xgo 的手动控制常驻服务（systemd 运行） | - |
 | 离线场地地图 | `blender-maps/ricam_arena/navigation/` | 10cm 栅格地图（pgm/yaml/json/png，含编号网格） | - |
 | 场地 Gazebo 模型 | `blender-maps/ricam_arena/gazebo/` | arena.world + obj/mtl 模型与预览图 | - |

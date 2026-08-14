@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>robot_dog_ball_grab</name>
+  <version>0.1.0</version>
+  <description>YOLO ball-grab program for the RAICOM delivery task: vendor hardware interface + project-trained ONNX ball model. Runs on the robot host, kept in catkin_ws as this task's code home.</description>
+
+  <maintainer email="1047840339@qq.com">RAICOM Team</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <export/>
+</package>
