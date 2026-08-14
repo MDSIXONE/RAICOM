@@ -28,6 +28,7 @@ std::string base_frame;
 std::string odom_frame;
 std::string laser_frame;
 std::string laser_topic;
+bool use_map_roi_filter = false;
 
 float lidar_x = 250, lidar_y = 250, lidar_yaw = 0;
 float deg_to_rad = M_PI / 180.0;
@@ -221,7 +222,24 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
                 y = -y;
             }
 
-            scan_points.push_back(cv::Point2f(x, y));
+            // 5. 可选：按当前位姿估计变换到裁剪地图像素坐标，
+            //    只保留场地区域（map_cropped）内的点，过滤场地外
+            //    观众、走廊等动态环境对匹配的干扰。变换公式与下方
+            //    transform_points 一致，不能用 continue（会跳过 angle 递增）。
+            bool inside_map_roi = true;
+            if (use_map_roi_filter && !map_cropped.empty())
+            {
+                float rotated_x = x * std::cos(lidar_yaw) - y * std::sin(lidar_yaw);
+                float rotated_y = x * std::sin(lidar_yaw) + y * std::cos(lidar_yaw);
+                float map_px = rotated_x + lidar_x;
+                float map_py = lidar_y - rotated_y;
+                inside_map_roi = map_px >= 0.0F && map_px < map_cropped.cols &&
+                                 map_py >= 0.0F && map_py < map_cropped.rows;
+            }
+            if (inside_map_roi)
+            {
+                scan_points.push_back(cv::Point2f(x, y));
+            }
         }
         angle += msg->angle_increment;
     }
@@ -485,6 +503,11 @@ int main(int argc, char** argv)
     private_nh.param<std::string>("odom_frame", odom_frame, "odom");
     private_nh.param<std::string>("laser_frame", laser_frame, "laser");
     private_nh.param<std::string>("laser_topic", laser_topic, "scan");
+    private_nh.param<bool>("use_map_roi_filter", use_map_roi_filter, false);
+    if (use_map_roi_filter)
+    {
+        ROS_INFO("lidar_loc 地图 ROI 过滤已开启：仅保留场地区域（裁剪地图）内的扫描点。");
+    }
 
     ros::NodeHandle nh;
     ros::Subscriber map_sub = nh.subscribe("map", 1, mapCallback);
