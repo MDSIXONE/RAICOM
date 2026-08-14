@@ -2,6 +2,191 @@
 
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
+## 2026-08-14｜抓球程序入 catkin：新建 robot_dog_ball_grab 包
+
+- 状态：改动完成
+- 目标：按用户约定（catkin_ws 为本次任务代码存放地、原厂程序不删），把机器端 YOLO 抓球程序 `ball_yolo_grab.py` 归档到 `robot-src/catkin_ws/src/` 下的独立 ROS 功能包。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_ball_grab/`（package.xml、CMakeLists.txt、README.md、scripts/ball_yolo_grab.py）；`docs/lingo.md`（新增「放 catkin」词条）、`.agents/skills/project-index/INDEX.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`ball_yolo_grab.py` 为复制归档（SHA-256 与 `robot-src/host-services/oumax-xgo/ball_yolo_grab.py` 原件一致），原厂区文件保留不动；新包为标准 catkin 脚本包（catkin_install_python 安装脚本），README 注明两处副本同步关系与机器端部署路径 `/home/pi/oumax-xgo/`。
+- 验证：副本哈希一致；本地 `py_compile` 通过。
+- 遗留风险：两处副本后续修改需保持同步；机器端实际运行仍以 `/home/pi/oumax-xgo/ball_yolo_grab.py` 为准。
+
+## 2026-08-14｜lidar_loc 增加场地 ROI 空间过滤
+
+- 状态：改动完成
+- 目标：NAV 初始定位时，只让场地区域（裁剪地图范围）内的激光点参与 scan matching，过滤场地外观众、走廊等动态环境对定位匹配的干扰。
+- 影响文件：`robot-src/catkin_ws/src/jie_ware/src/lidar_loc.cpp`、`robot-src/catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`、`robot-src/catkin_ws/src/robot_dog_navigation/launch/offline_navigation.launch`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`lidar_loc` 新增 `~use_map_roi_filter` 参数（默认 false，保持第三方包原行为）；开启后每个扫描点按当前位姿估计（lidar_x/lidar_y/lidar_yaw）变换到裁剪地图像素坐标，超出 `map_cropped` 范围的点不进入 `scan_points`；变换公式与匹配用 transform_points 完全一致，用布尔标志而非 continue（避免跳过 angle 递增）。两个项目 launch（实机主流程与离线导航）显式开启该参数。
+- 验证：git diff 静态复核（过滤公式与匹配公式一致性、边界判定、angle 递增不受影响、map 未到达时行为同原版）；已部署至机器狗（192.168.137.157）：旧版备份至 `/home/pi/ros_ws/backups/deploy-20260814-lidar-loc-roi-filter/`，scp 上传后修复 CRLF，`ros-noetic` 容器内 `catkin_make --pkg jie_ware` 编译成功，`lidar_loc` 可执行已更新（Aug 14 07:34）；`robot_dog_main.launch --nodes` 与 `offline_navigation.launch --nodes` 静态解析均通过。未重启实机导航进程（下次 bringup 生效）。
+- 遗留风险：过滤依赖 initialpose 附近的位姿估计，若初始位姿错误过大，可能滤掉场内点导致匹配退化；实机需观察定位收敛效果与日志中过滤开启提示。
+
+## 2026-08-14｜YOLO 抓球小臂前伸到位改为 -45°
+
+- 状态：改动完成
+- 目标：把夹球序列的小臂前伸到位值从 `-58°` 改为 `-45°`，减少前伸量；过渡位 `-50°` 保持不变。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、`docs/lingo.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`grab` 机械臂序列 `(52, -58, 1.2)` 改为 `(52, -45, 1.2)`；词典「机械臂关节」与「低趴」词条的前伸到位值同步为 `52=-45°`。
+- 验证：本地 Python 编译通过；尚未部署机器端。
+- 遗留风险：前伸量减少会影响夹球距离与落点，实机需重新观察球能否落入爪内；机器端 `ball_green.py` 未同步修改（如仍在使用需一并更新）。
+
+## 2026-08-14｜YOLO 抓球完成后车体 yaw 补偿复原
+
+- 状态：改动完成
+- 目标：夹球序列完成后把车体 yaw 从抓取补偿的 `-6°` 复原为 `0°`，避免程序退出后车体保持向右偏斜。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、`docs/lingo.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`grab` 的机械臂序列（含收臂）完成后、输出 `action=grab-complete` 前增加 `dog.attitude("y", 0)` 并等待 1 秒。
+- 验证：本地 Python 编译通过；尚未部署机器端。
+- 遗留风险：复原后车体朝向恢复为初始朝向，下次运行程序会重新下发 `y=-6`，不影响抓取；实机需现场确认复原动作平滑、无位置偏移。
+
+## 2026-08-14｜YOLO 抓取前爪子最大张开
+
+- 状态：改动完成
+- 目标：在最终抓取准备时将 51 号爪子张开至实际下限 `-65°`，为球进入夹爪留出最大开口。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、`docs/lingo.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`grab` 的准备序列首项从 `51=-30°` 改为 `51=-65°`；抓球词典同步为最大张开、`53=90°`、`52=-58°` 的当前实机序列。
+- 验证：本地 Python 编译通过；机器 SSH 当前超时，尚未部署。
+- 遗留风险：更大开口会改变球进入夹爪的横向容差，须结合实际夹取结果复核。
+
+## 2026-08-14｜YOLO 抓球车体 yaw -6° 补偿
+
+- 状态：改动完成
+- 目标：在低趴接近和最终抓取阶段保持实机确认有效的车体 `yaw=-6°`，补偿机械臂左偏。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：在 `prepare_approach_pose` 与 `grab` 的低趴命令后均增加 `dog.attitude("y", -6)`。
+- 验证：本地和机器端 Python 编译通过，更新版本已部署并以 PID 6999 启动。
+- 遗留风险：补偿角度按当前机械臂零位与场地标定，机械安装或车体姿态变化后需重测。
+
+## 2026-08-14｜YOLO 前进脉冲增至 0.15 秒
+
+- 状态：改动完成
+- 目标：增加每次小步前进距离，解决 0.10 秒脉冲接近不足的问题。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`dog.move_x(3)` 的脉冲等待从 `0.10s` 改为 `0.15s`；更新版本已部署并以 PID 5121 启动。
+- 验证：本地与机器端 Python 编译通过，后台抓球进程存活。
+- 遗留风险：目标框尺寸不增长时仍可能需要多次脉冲才能到达抓取半径。
+
+## 2026-08-14｜YOLO 后肢同步抬高
+
+- 状态：改动完成
+- 目标：最终抓取前同步抬高两条后肢，避免先抬单侧造成机身横移。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`、`docs/lingo.md`。
+- 实施记录：将依次发送且相隔 0.5 秒的 `31=26°`、`41=25°` 改为紧邻的 `dog.motor([31, 41], [26, 25])` 调用。
+- 验证：本地 Python 编译通过；后续从机器实际 `xgolib` 源码确认该列表接口会拆为两个单舵机串行帧，不能视为原子同步。
+- 遗留风险：该版本只消除了中间的显式等待，无法保证物理同步；若横移仍影响抓取，需改用固件支持的批量协议或重新设计抬升方式。
+
+## 2026-08-14｜YOLO 低趴接近与末端后肢抬高
+
+- 状态：改动完成
+- 目标：让程序以低趴姿态接近球，抵达抓取阈值后才抬高后肢并夹取。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`、`docs/lingo.md`。
+- 实施记录：新增 `prepare_approach_pose`：仅在程序开始时设 `slow_trot`，随后发送 `z=10`、`p=15` 低趴，不设置后肢 31/41。转向和前进分支不再重复设置步态；到抓取分支后才设置 `31=26°、41=25°` 并执行机械臂序列。
+- 验证：本地 Python 编译通过。
+- 遗留风险：机器当前断电，尚未部署和实机确认步态设定后低趴能否在接近期间持续保持。
+
+## 2026-08-14｜YOLO 抓取前低趴与前进脉冲调整
+
+- 状态：改动完成
+- 目标：只在最终抓取前进入低趴，避免接近阶段重复切换姿态；略微增加每次小步前进时长。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`。
+- 实施记录：移除程序启动时的 `prepare_pose` 调用与定义，低趴只保留在 `grab` 分支；前进脉冲由 `0.08s` 调为 `0.10s`。新版本已部署。
+- 验证：本地与机器端 Python 编译通过；实机运行确认接近阶段持续使用行走步态，未在程序起始时下发低趴指令。
+- 遗留风险：当前球框半径可能在前进中不增长，造成持续接近而无法触发最终抓取；该视觉距离问题仍需单独标定。
+
+## 2026-08-14｜YOLO 抓取前姿态重建
+
+- 状态：改动完成
+- 目标：在前进行走导致车体恢复站姿后，于合爪前重建已验证的低趴、后肢抬高和机械臂抓取准备姿态。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`。
+- 实施记录：`grab` 在 `action=grab-start` 后先停步，重发 `z=10`、`p=15`、`31=26°`、`41=25°`；由于车体姿态会复位机械臂，再按安全顺序下发 `51=-30° → 52=-50° → 53=90° → 52=-58°`，最后才闭爪和收臂。
+- 验证：本地与机器端 Python 编译通过，更新版本已部署至机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`。
+- 遗留风险：尚待下一次实机完整流程确认球能落在爪内并被实际夹住。
+
+## 2026-08-14｜YOLO 接近停止保护移除
+
+- 状态：改动完成
+- 目标：移除框半径回落和累计前进步数导致的提前退出，让已识别到的球持续进入抓取半径。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`。
+- 实施记录：删除 `expected_radius`/`action=stop-no-approach` 与 `max_forward_pulses`/`action=stop-forward-limit` 分支；保留“检测到球、水平居中且框半径达到 28px 后抓取”的主流程。
+- 验证：本地和机器端 Python 编译通过；后台实机实例连续执行前进脉冲，日志最终依次输出 `action=grab-start`、`action=grab-complete` 并退出。
+- 遗留风险：`grab-complete` 仅证明机械臂序列完成，是否实际夹住球仍须现场观察。前进时 `slow_trot` 会接管车体并恢复行走站姿，低趴不能在行走阶段保持。
+
+## 2026-08-14｜YOLO 抓球起始姿态对齐
+
+- 状态：改动完成
+- 目标：让完整 YOLO 抓球流程以现场确认可夹球的低趴、后肢抬高姿态开始，避免厂商 `z=75` 起始命令覆盖该姿态。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`prepare_pose` 改为 `z=10`、`p=15` 后再设 `31=26°、41=25°`，且不提前发送机械臂指令；抓取序列的大臂目标从会被运行库钳制的 `120°` 改为实际可达的 `90°`。远端旧版已备份为 `/home/pi/oumax-xgo/ball_yolo_grab.py.20260814-pre-low-pose.bak`，新版本已部署。
+- 验证：本地与机器端均通过 Python 编译；实机完整流程检测到 green（置信度 0.91），执行一次 `action=forward-step`，随后因检测框半径从 25.2px 回落到 20.4px 触发 `action=stop-no-approach` 并正常停止。
+- 遗留风险：本次未触发夹取；YOLO 框半径在移动后的波动仍会触发接近保护，需根据现场观察调整距离判断后再测。
+
+## 2026-08-13｜YOLO 抓球完成信号
+
+- 状态：改动完成
+- 目标：为实机抓球流程输出可由持续监控判定的抓取开始与完成日志。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`grab` 函数在开始关节序列前输出 `action=grab-start`，完成最后一个关节收回后输出 `action=grab-complete`；已部署并重新启动真实动作实例。
+- 验证：机器端 Python 编译通过，新实例 PID 39105 存活且相机初始化成功；Codex 已创建每分钟一次的抓球状态监控。
+- 遗留风险：`action=grab-complete` 表示序列执行完毕，不等于爪内实际持球，仍须现场目视确认。
+
+## 2026-08-13｜YOLO 接近距离误标定保护
+
+- 状态：改动完成
+- 目标：阻止 YOLO 抓球因错误套用厂商圆检测距离公式而连续前进至丢失目标。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/{CHANGE_LOG,FAILED_APPROACHES}.md`。
+- 实施记录：移除 `54.82 - YOLO 框半径` 的虚假距离控制，改用可标定的 `target_radius=28px`；前进固定为速度 3、0.08 秒小步，每次运行最多 6 步，单步后若框半径明显缩小即停止。一次实测中发现 1px 增长要求对 0.08 秒小步过严，调整为仅在半径明显缩小时中止。
+- 验证：机器端 Python 编译通过。PID 39670 实测连续完成 6 个 `action=forward-step` 后输出 `action=stop-forward-limit` 并退出；框半径仅在 14.9–16.5px 间波动，未出现旧版持续推进至丢失目标。
+- 遗留风险：当前模型框半径尚未在“可抓取距离”做实机标定，28px 只是保守初值；自动接近将每次最多走 6 小步，达到上限后需根据现场位置重新启动或完成标定。
+
+## 2026-08-13｜YOLO 抓球转向参数实机标定
+
+- 状态：改动完成
+- 目标：以实机确认有效的转向强度与脉冲时长更新 YOLO 抓球对准动作。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：直接复现厂商转向流程后确认 `slow_trot + turn(-8) × 0.74s` 无动作，而仅提高到 `turn(-15) × 0.74s` 后现场确认可转；YOLO 程序据此把转向脉冲从 0.15s 改为 0.74s，并增加动作日志。
+- 验证：机器端 Python 编译通过，真实动作实例 PID 65690 已启动；日志显示模型稳定检测 green（0.89–0.92）并连续执行 `action=forward-fast`，距离估算从 41.1 下降至 35.9，证明对准后的前进行为已实际进入。
+- 遗留风险：转向方向尚需在球明显偏离中心时再次观察；距离估算与抓取阈值仍未做物理距离标定。
+
+## 2026-08-13｜YOLO 抓球改为类别无关目标选择
+
+- 状态：改动完成
+- 目标：让独立抓球程序完全按 YOLO 输出选择球，取消固定绿色类别和 Picamera RGB 通道的二次交换。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：检测器改为在 YOLO 的所有球类分数中选择最高置信目标，再进行 NMS；Picamera2 `RGB888` 图像改为不再执行 `swapRB`，直接按 RGB 输入模型。日志会输出模型选择的 red/blue/green 类别，不包含 HSV 或颜色阈值判断。
+- 验证：机器端 Python 编译通过；单帧无动作实测模型选中 green（置信度 0.89、距离估算 38.9、水平偏差 36.5）；随后真实动作模式进程 PID 20322 已启动。
+- 遗留风险：距离仍由 YOLO 框尺寸套用原厂圆半径公式估算，尚未实物标定；若视野内有多个球，当前按最高置信度选择而非指定颜色。
+
+## 2026-08-13｜独立 YOLO 抓球程序
+
+- 状态：改动完成
+- 目标：以项目训练的 `best.onnx` 替代厂商 HSV/圆检测，重写为不依赖 Catkin 的机器端抓球程序。
+- 影响文件：`robot-src/host-services/oumax-xgo/ball_yolo_grab.py`、机器 `/home/pi/oumax-xgo/ball_yolo_grab.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：新增独立脚本，直接使用厂商 `xgovenv`、Picamera2、XGO 控制库与机器 `/home/pi/ros_ws/models/best.onnx`；YOLO 仅选择训练类别 green（索引 2），连续 3 帧确认后才发出低速转向/前进脉冲，未检测到球时保持原地；抓取动作沿用已实机标定的 51/52/53 关节序列。
+- 验证：已上传至机器并用厂商解释器完成 Python 编译；无动作单帧实测成功启动相机、加载模型并输出 `YOLO no green ball; holding position`，未发送运动命令。
+- 遗留风险：模型的绿色类别索引按既有训练顺序 red/blue/green 假定；仍需在放球的实景中确认检测置信度与以框半径估算的抓取距离，再开启 `--enable-motion`。
+
+## 2026-08-13｜厂商抓球 demo 前进速度降档
+
+- 状态：改动完成
+- 目标：降低厂商 `ball_green.py` 识别对准阶段的快速前进与微调前进速度，避免实机出现大幅前冲。
+- 影响文件：机器 `/home/pi/RaspberryPi-CM5/robots/Mini3W_W/demos/ball_green.py`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：两处机型分支的 `x_speed_far` 均从 16 降为 6，`x_speed_slow` 均从 8 降为 3；修改前停止旧实例，随后用厂商 `xgovenv` 重启原厂 `ball_green.py`。
+- 验证：远端源码四项速度常量均已读回为 6/3；新进程 PID 130998 持续运行并完成相机初始化。
+- 遗留风险：原厂“绿色 HSV 阈值 + Hough 圆”不是语义模型，绿色圆形背景仍可能被误当作球；本次仅调低动作速度，未改识别算法。
+
+## 2026-08-13｜厂商抓球 demo（ball.py）实机调试：arm_polar 不可靠，改关节直控
+
+- 状态：进行中
+- 目标：在机器（192.168.137.157）上运行厂商示例 `~/RaspberryPi-CM5/robots/Mini3W_W/demos/ball.py` 抓球，修复机械臂不动/伸不到位问题。
+- 影响文件：机器 `~/RaspberryPi-CM5/robots/Mini3W_W/demos/ball_green.py`（由 ball.py 复制的绿球版，默认 color=green/mode=2）、`docs/lingo.md`（新增"机械臂关节"词条）。
+- 实施记录：
+  - 运行前置：停 `oumax-manual.service`（占 /dev/ttyAMA0）与 `oumax-camera.service`（占 picamera2）后 setsid 启动；备份脚本经 `arm_mode(1)` 验证有效。
+  - 根因 1：ball.py 的 catch_arm/down_arm 未调用 `arm_mode(1)`，固件忽略 arm_polar，仅 claw 生效（现象：只有爪子开合）。加 `arm_mode(1)` 后臂能动。
+  - 根因 2：`arm_polar(theta,r)` 极坐标命令在固件 M-7.0.0b8 上不可靠——命令帧（0x76/0x77）发出但固件经常不执行（多轮抓包确认发送正常、多次实测臂不动或只执行第一帧）。废弃 arm_polar，改用 `dog.motor(id, angle)` 关节直控。
+  - 关节标定（现场逐步实测）：51=爪子（+收紧/-张开）；52=小臂（**负=前伸**，正=后收会扫摄像头）；53=大臂（+前抬/-后倒，+120 钳到上限）。收回顺序必须先大臂后小臂。
+  - 抓球序列（当前版）：51:-30 张爪 → 52:-50 小臂前伸 → 53:+120 大臂前抬 → 52:-65 小臂前伸到位 → 51:+40 闭合 → 53:0 → 52:0。
+- 验证：`arm_mode(1)` 修复后臂动；关节直控每步均有动作；摄像头曾两次被臂碰掉（+40 前抬、小臂后收路径），已装回；最终抓球距离仍在调（x_distance/小臂前伸量）。
+- 遗留风险：52/53 方向结论是现场观察标定，不同固件/机型可能不同；抓球姿态参数未收敛（距离不够）；`x_distance.txt`（默认 22）控制抓取触发距离；测试后需恢复 oumax-manual/oumax-camera 服务（当前 inactive）。
+
 ## 2026-08-11｜四轮通道顺序校正
 
 - 状态：进行中
