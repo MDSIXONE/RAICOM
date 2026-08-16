@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>car3</name>
+  <version>1.0.0</version>
+  <description>Isolated copy of the temporary car3 robot description for RICAM simulation.</description>
+  <maintainer email="ricam@example.com">RICAM Team</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>gazebo_plugins</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_ros_control</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>roboticsgroup_gazebo_plugins</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>joint_state_controller</exec_depend>
+  <exec_depend>position_controllers</exec_depend>
+</package>

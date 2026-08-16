@@ -1,0 +1,58 @@
+<launch>
+  <arg name="gui" default="true"/>
+  <arg name="rviz" default="true"/>
+  <arg name="navigation" default="true"/>
+  <arg name="local_planner" default="cym_planner/CymPlanner"/>
+  <arg name="cym_navigation_mode" default="main_legacy"/>
+  <arg name="paused" default="false"/>
+  <arg name="start_x" default="-1.30"/>
+  <arg name="start_y" default="1.00"/>
+  <arg name="start_z" default="0.004"/>
+  <arg name="start_yaw" default="0.0"/>
+
+  <env name="GAZEBO_MODEL_PATH" value="$(find ricam_arena_sim)/..:$(optenv GAZEBO_MODEL_PATH)"/>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find ricam_arena_sim)/worlds/arena.world"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="paused" value="$(arg paused)"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+
+  <param name="robot_description" textfile="$(find mini2_description)/urdf/mini2_sim.urdf"/>
+  <node name="spawn_mini2" pkg="gazebo_ros" type="spawn_model"
+        args="-urdf -param robot_description -model mini2 -x $(arg start_x) -y $(arg start_y) -z $(arg start_z) -Y $(arg start_yaw)"
+        output="screen"/>
+
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+    <param name="publish_frequency" value="50.0"/>
+  </node>
+
+  <node name="map_server" pkg="map_server" type="map_server"
+        args="$(find ricam_arena_sim)/maps/ricam_arena.yaml" output="screen"/>
+  <node name="map_to_odom" pkg="tf2_ros" type="static_transform_publisher"
+        args="0 0 0 0 0 0 1 map odom" output="screen"/>
+
+  <node if="$(arg navigation)" name="move_base" pkg="move_base" type="move_base"
+        output="screen" clear_params="true">
+    <rosparam file="$(find ricam_arena_sim)/config/costmap_common.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find ricam_arena_sim)/config/costmap_common.yaml"
+              command="load" ns="local_costmap"/>
+    <rosparam file="$(find ricam_arena_sim)/config/global_costmap.yaml"
+              command="load" ns="global_costmap"/>
+    <rosparam file="$(find ricam_arena_sim)/config/local_costmap.yaml"
+              command="load" ns="local_costmap"/>
+    <rosparam file="$(find ricam_arena_sim)/config/move_base.yaml" command="load"/>
+    <rosparam file="$(find cym_planner)/config/cym_planner_params.json" command="load"/>
+    <rosparam file="$(find ricam_arena_sim)/config/cym_planner_sim.yaml" command="load"/>
+    <param name="base_local_planner" value="$(arg local_planner)"/>
+    <param name="CymPlanner/navigation_mode" value="$(arg cym_navigation_mode)"/>
+  </node>
+
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find ricam_arena_sim)/rviz/arena.rviz" output="screen">
+    <env name="DISABLE_ROS1_EOL_WARNINGS" value="1"/>
+    <env name="QT_X11_NO_MITSHM" value="1"/>
+  </node>
+</launch>

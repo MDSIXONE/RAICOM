@@ -1,0 +1,103 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz/Grid
+      Cell Size: 0.25
+      Color: 160; 160; 160
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Reference Frame: map
+    - Alpha: 0.82
+      Class: rviz/Map
+      Color Scheme: map
+      Enabled: true
+      Name: Arena Map
+      Topic: /map
+      Unreliable: false
+    - Alpha: 0.48
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic: /move_base/global_costmap/costmap
+      Unreliable: false
+    - Alpha: 0.72
+      Class: rviz/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap
+      Topic: /move_base/local_costmap/costmap
+      Unreliable: false
+    - Class: rviz/RobotModel
+      Enabled: true
+      Name: Car3
+      Robot Description: robot_description
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz/LaserScan
+      Enabled: true
+      Name: Laser Scan
+      Topic: /scan
+      Size (m): 0.02
+      Style: Points
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Name: CymPlanner Laser Points
+      Topic: /move_base/CymPlanner/laser_points
+      Size (m): 0.02
+      Style: Points
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: CymPlanner Candidates
+      Marker Topic: /move_base/CymPlanner/candidate_trajectories
+    - Class: rviz/Marker
+      Enabled: true
+      Name: CymPlanner Selected Trajectory
+      Marker Topic: /move_base/CymPlanner/selected_trajectory
+    - Class: rviz/Marker
+      Enabled: true
+      Name: CymPlanner Lookahead Footprint
+      Marker Topic: /move_base/CymPlanner/lookahead_footprint
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: Numbered Waypoint Route
+      Marker Topic: /numbered_waypoint_navigation/route_markers
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Views:
+    Current:
+      Class: rviz/TopDownOrtho
+      Angle: 0
+      Scale: 120
+      X: 0
+      Y: 0
+Window Geometry:
+  Height: 900
+  Width: 1200

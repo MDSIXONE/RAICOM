@@ -1,0 +1,17 @@
+<launch>
+  <arg name="image_topic" default="/camera/rgb/image_raw"/>
+  <arg name="output_dir" default="$(find ricam_dataset_capture)/data/images"/>
+  <arg name="interval" default="0.5"/>
+  <arg name="max_images" default="600"/>
+  <arg name="jpeg_quality" default="95"/>
+
+  <node name="timed_image_capture" pkg="ricam_dataset_capture"
+        type="timed_image_capture.py" output="screen" required="true">
+    <param name="image_topic" value="$(arg image_topic)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="interval" value="$(arg interval)"/>
+    <param name="max_images" value="$(arg max_images)"/>
+    <param name="jpeg_quality" value="$(arg jpeg_quality)"/>
+    <param name="stop_when_complete" value="true"/>
+  </node>
+</launch>
