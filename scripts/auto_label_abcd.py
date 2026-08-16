@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("images", nargs="*", help="图片目录或图片列表")
     parser.add_argument("--conf", type=float, default=MIN_CONF)
     parser.add_argument("--no-cuda", action="store_true")
+    parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--end", type=int, default=None)
     args = parser.parse_args()
 
     paths = [Path(p) for p in args.images]
@@ -37,6 +39,7 @@ def main() -> None:
         paths = sorted(paths[0].glob("*.jpg"))
     if not paths:
         sys.exit("no images")
+    paths = paths[args.start:args.end]
 
     reader = easyocr.Reader(
         ["en"],
