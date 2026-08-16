@@ -31,6 +31,12 @@ class SimpleOdom:
         self.yaw_jump_limit = rospy.get_param("~yaw_jump_limit", 0.4)
         self.vx_eps = rospy.get_param("~vx_eps", 0.01)
         self.d_max = rospy.get_param("~d_max", 0.10)
+        # Stale /cmd_vel must decay to zero: the last Twist would otherwise
+        # keep integrating forever after the publisher stops (e.g. a test
+        # rostopic pub), making odom drift kilometres while the robot stands
+        # still and breaking lidar_loc / move_base feedback.
+        self.cmd_timeout = rospy.get_param("~cmd_timeout", 0.5)
+        self._cmd_stamp = None
 
         self.lock = threading.Lock()
         self.x = self.init_x
@@ -56,6 +62,7 @@ class SimpleOdom:
         with self.lock:
             self.vx = msg.linear.x
             self.wz = msg.angular.z
+            self._cmd_stamp = rospy.Time.now()
 
     def fetch_imu_yaw(self):
         if not self.imu_url:
@@ -72,7 +79,11 @@ class SimpleOdom:
             return None
         if self._last_raw is None:
             self._last_raw = raw
-            self._accum_yaw = raw
+            # Baseline the accumulated yaw at init_yaw so the robot starts
+            # facing the map +X axis (mapping mode) instead of the IMU's
+            # absolute magnetic heading (e.g. ~25 deg), which made the robot
+            # appear tilted in RViz.
+            self._accum_yaw = self.init_yaw
         else:
             delta = raw - self._last_raw
             if delta > math.pi:
@@ -94,6 +105,9 @@ class SimpleOdom:
             dt = 0.0 if self.last_time is None else (now - self.last_time).to_sec()
             self.last_time = now
             vx, wz = self.vx, self.wz
+            if self._cmd_stamp is not None and (now - self._cmd_stamp).to_sec() > self.cmd_timeout:
+                vx = wz = 0.0
+                self.vx = self.wz = 0.0
             x, y, yaw = self.x, self.y, self.yaw
         if dt > 0.5 or dt < 0.0:
             dt = 0.0

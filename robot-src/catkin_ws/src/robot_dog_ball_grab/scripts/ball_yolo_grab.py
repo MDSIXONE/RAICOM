@@ -63,7 +63,7 @@ def grab(enabled):
     dog.stop()
     dog.translation("z", 10)
     dog.attitude("p", 15)
-    dog.attitude("y", -6)
+    dog.attitude("y", -3)
     time.sleep(1)
     dog.motor([31, 41], [26, 25])
     time.sleep(1)
@@ -78,12 +78,15 @@ def grab(enabled):
 
 
 def prepare_approach_pose(enabled):
-    """步态设定后低趴接近；后肢仅在最终抓取前抬高。"""
+    """步态设定后低趴接近（z=10/p=15，不加 yaw 补偿）；后肢仅在最终抓取前抬高。
+
+    车体 y=-6 机械臂左偏补偿只在抓球瞬间（grab）使用，接近阶段不得带，
+    否则接近时车体会向右偏斜。
+    """
     if enabled:
         dog.gait_type("slow_trot")
         dog.translation("z", 10)
         dog.attitude("p", 15)
-        dog.attitude("y", -6)
         time.sleep(1)
 
 

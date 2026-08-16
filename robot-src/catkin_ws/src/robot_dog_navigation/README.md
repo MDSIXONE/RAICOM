@@ -49,3 +49,56 @@ bash wsl-simulation/start_robot_rviz.sh
 
 该脚本只打开本机 RViz，并将 ROS 回连地址固定为当前 WSL 局域网地址
 `192.168.137.139`；如地址改变，可通过 `RAICOM_WSL_IP` 覆盖。
+
+## 主流程（定点巡航 → 抓球放球）
+
+`scripts/main_flow.py` 是上电后的全自动主流程：以当前位姿为起点（默认从
+`map → base_link` 读取，可用 `--start-x/--start-y/--start-yaw` 覆盖），依次向
+`/move_base` 发送 5 个带朝向的目标点，全部到达后运行抓球放球一键编排
+`ball_grab_release.py`（抓球 → 掉头 180° → 放球）。
+
+相对路径（以起点为原点、初始朝向为 0 基准，x 前 y 左，右转 yaw 为负）：
+
+| 点 | 位置 | 朝向 |
+| --- | --- | --- |
+| P1 | 前方 2.3 m（`--forward-m`） | 初始右转 90°（`--turn-deg`） |
+| P2 | 初始朝向右方 0.5 m | 与初始相差 180° |
+| P3 | 右方累计 2.15 m（再 1.65 m） | 与初始相差 180° |
+| P4 | 左方 0.575 m（自 P3 回撤，右方累计 1.575 m） | 与初始相差 180° |
+| P5 | 沿 P4 朝向前进 1 m（`--final-forward-m`） | 与 P1 相同（右转 90°） |
+
+距离参数（`--side-distances`，逗号分隔，正值=右方、负值=左方）均为实测标定值，
+实机验证时可按场地调整；若某段方向相反，把对应参数取负即可。
+
+运行（机器端 ROS 容器内，ROS master 指向控制 PC）：
+
+```bash
+rosrun robot_dog_navigation main_flow.py --enable-motion
+```
+
+- 前置：`robot_dog_main.launch` 已用 AMCL 定点模式启动（`use_amcl:=true
+  map_file:=ricam_arena_mapped.yaml init_x:=0.0 init_y:=0.0 init_yaw:=0.0`），
+  起点与地图原点对齐摆放。
+- 局部规划器切换（对比验证用）：`local_planner:=dwa` 使用标准
+  `dwa_local_planner/DWAPlannerROS`（参数 `config/dwa_planner.yaml`），默认
+  `local_planner:=cym` 为自定义 CymPlanner；全局规划器始终为
+  `global_planner/GlobalPlanner`。
+- 不带 `--enable-motion` 时 move_base 照常导航，但最后的抓球放球程序不运动
+  （与 `ball_grab_release.py` 的门禁一致）。
+- 抓球放球脚本默认按本脚本同目录解析（机器端部署形态
+  `/home/pi/oumax-xgo/`），也可用 `--grab-release-script` 显式指定。
+
+**机器端一键执行（推荐，master 跑在机器上）**：导航在容器内执行（ROS 全走
+本机 127.0.0.1），导航完成后经 ssh 到宿主机释放串口并运行抓球放球编排：
+
+```bash
+# 机器终端（或 ssh）：
+bash /home/pi/run_main_flow.sh
+```
+
+`run_main_flow.sh` 调用的参数：`--enable-motion --grab-release-ssh
+pi@127.0.0.1 --side-distances 0.5,0.25,-0.575`（右侧距离已按实机地图已知区
+y≥-0.75 临时收缩；地图补扫右下角后恢复 `0.5,1.65,-0.575`）。`--grab-release-ssh`
+模式会先 `ssh <host> sudo systemctl stop oumax-manual.service` 释放串口，
+再用机器端 xgovenv python 跑 `/home/pi/oumax-xgo/ball_grab_release.py`
+（`--grab-release-python` 可改，默认 `/home/pi/RaspberryPi-CM5/xgovenv/bin/python`）。

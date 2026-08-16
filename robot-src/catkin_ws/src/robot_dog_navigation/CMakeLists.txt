@@ -16,6 +16,7 @@ catkin_package(
 
 catkin_install_python(PROGRAMS
   scripts/initial_pose_publisher.py
+  scripts/main_flow.py
   scripts/mock_lidar_publisher.py
   scripts/scan_circle_filter.py
   scripts/scan_to_cloud_and_body.py

@@ -1,10 +1,10 @@
-# Local planner is the standalone CymPlanner plugin from the 20260713 release
-# (catkin_ws/src/cym_planner).  Plugin params live in
-# config/cym_planner_params.json, loaded by the move_base node in the launch
-# files.  /cmd_vel may be published after a 2D Nav Goal, but this offline
-# package has no base driver or hardware subscriber.
+# 全局规划器固定使用官方 global_planner/GlobalPlanner（navfn 系）。
+# 局部规划器由 launch 的 local_planner arg 选择（base_local_planner 由
+# robot_dog_main.launch 按 arg 设置）：
+#   cym = cym_planner/CymPlanner（默认，参数在 config/cym_planner_params.json）
+#   dwa = dwa_local_planner/DWAPlannerROS（对比验证，参数在 config/dwa_planner.yaml）
+# /cmd_vel 由 oumax_cmd_vel_bridge 转发给手控服务驱动实机。
 base_global_planner: global_planner/GlobalPlanner
-base_local_planner: cym_planner/CymPlanner
 
 planner_frequency: 1.0
 controller_frequency: 5.0

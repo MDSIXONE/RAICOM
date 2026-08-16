@@ -197,8 +197,12 @@ void scanCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
         if (msg->ranges[i] >= msg->range_min && msg->ranges[i] <= msg->range_max)
         {
             // 1. 首先在激光雷达坐标系下计算点的坐标
+            // 标准 LaserScan 约定：angle 逆时针为正，y = r*sin(angle)。
+            // 旧版 -sin 会把点云左右镜像，导致贪心匹配收敛到 180° 镜像位姿，
+            // 表现为 RViz 地图/点云镜像、定点导航掉头向后走。与
+            // scan_to_cloud_and_body.py / scan_circle_filter.py 的标准转换保持一致。
             float x_laser = msg->ranges[i] * cos(angle);
-            float y_laser = -msg->ranges[i] * sin(angle);
+            float y_laser = msg->ranges[i] * sin(angle);
 
             // 2. 创建要转换的点
             geometry_msgs::PointStamped point_laser;

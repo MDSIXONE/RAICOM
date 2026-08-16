@@ -16,6 +16,11 @@
        navigation mode reuses the arena pose used in offline sim. -->
   <arg name="init_x" default="-0.70"/>
   <arg name="init_y" default="1.00"/>
+  <!-- Initial heading (rad) for navigation mode.  simple_odom restarts with a
+       zero yaw baseline after each launch, so the robot's real heading in the
+       map (read from /odom while mapping) must be passed here or lidar_loc's
+       scan matching starts ~90+ deg off and never converges. -->
+  <arg name="init_yaw" default="0.0"/>
 
   <env name="ROS_MASTER_URI" value="http://$(arg local_master_ip):11311"/>
   <env name="ROS_IP" value="192.168.137.157"/>
@@ -107,30 +112,61 @@
     <param name="image_topic" value="/camera/rgb/image_raw"/>
   </node>
 
+  <!-- Scan-matching localization (jie_ware lidar_loc): publishes map ->
+       odom TF at ~30 Hz from the /scan_filtered scan matched against
+       /map.  It resets to the map origin on the first map message, so
+       initial_pose_publisher re-publishes the RICAM offline pose after the
+       map arrives (initialpose callback also clears costmaps ~30 scans
+       later).  Keep this node paired with initial_pose_publisher: never
+       restart lidar_loc alone, or it will sit at the map origin.
+       Use use_amcl:=true to replace this brittle greedy scan matcher with
+       the probabilistic AMCL localizer (also consumes /initialpose). -->
+  <arg name="use_amcl" default="false"/>
+  <!-- 局部规划器选择：cym（默认，自定义 CymPlanner）/ dwa（标准 DWA，对比验证用） -->
+  <arg name="local_planner" default="cym"/>
   <group unless="$(arg enable_mapping)">
-    <!-- Scan-matching localization (jie_ware lidar_loc): publishes map ->
-         odom TF at ~30 Hz from the /scan_filtered scan matched against
-         /map.  It resets to the map origin on the first map message, so
-         initial_pose_publisher re-publishes the RICAM offline pose after the
-         map arrives (initialpose callback also clears costmaps ~30 scans
-         later).  Keep this node paired with initial_pose_publisher: never
-         restart lidar_loc alone, or it will sit at the map origin. -->
-    <node pkg="jie_ware" type="lidar_loc" name="lidar_loc" output="screen">
-      <param name="base_frame" value="base_link"/>
-      <param name="odom_frame" value="odom"/>
-      <param name="laser_frame" value="laser_frame"/>
-      <param name="laser_topic" value="/scan_filtered"/>
-      <param name="use_map_roi_filter" value="true"/>
-    </node>
+    <group unless="$(arg use_amcl)">
+      <node pkg="jie_ware" type="lidar_loc" name="lidar_loc" output="screen">
+        <param name="base_frame" value="base_link"/>
+        <param name="odom_frame" value="odom"/>
+        <param name="laser_frame" value="laser_frame"/>
+        <param name="laser_topic" value="/scan_filtered"/>
+        <param name="use_map_roi_filter" value="true"/>
+      </node>
+    </group>
+    <group if="$(arg use_amcl)">
+      <node pkg="amcl" type="amcl" name="amcl" output="screen">
+        <param name="base_frame_id" value="base_link"/>
+        <param name="odom_frame_id" value="odom"/>
+        <param name="global_frame_id" value="map"/>
+        <param name="scan_topic" value="/scan_filtered"/>
+        <param name="min_particles" value="500"/>
+        <param name="max_particles" value="2000"/>
+        <param name="update_min_d" value="0.1"/>
+        <param name="update_min_a" value="0.1"/>
+        <param name="laser_model_type" value="likelihood_field"/>
+        <param name="laser_max_range" value="8.0"/>
+        <param name="laser_min_range" value="0.2"/>
+        <param name="initial_pose_x" value="$(arg init_x)"/>
+        <param name="initial_pose_y" value="$(arg init_y)"/>
+        <param name="initial_pose_a" value="$(arg init_yaw)"/>
+        <param name="transform_tolerance" value="0.5"/>
+      </node>
+    </group>
     <node pkg="robot_dog_navigation" type="initial_pose_publisher.py"
           name="initial_pose_publisher" output="screen">
       <param name="init_x" value="$(arg init_x)"/>
       <param name="init_y" value="$(arg init_y)"/>
-      <param name="init_yaw" value="0.0"/>
+      <param name="init_yaw" value="$(arg init_yaw)"/>
     </node>
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <rosparam file="$(find robot_dog_navigation)/config/move_base.yaml" command="load"/>
-    <rosparam file="$(find cym_planner)/config/cym_planner_params.json" command="load"/>
+    <!-- 局部规划器选择：cym 默认；dwa 为对比验证（标准 DWA，参数见
+         config/dwa_planner.yaml）。base_local_planner 由本节点按 arg 设置。 -->
+    <param name="base_local_planner" value="cym_planner/CymPlanner" unless="$(eval arg('local_planner') == 'dwa')"/>
+    <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS" if="$(eval arg('local_planner') == 'dwa')"/>
+    <rosparam file="$(find cym_planner)/config/cym_planner_params.json" command="load" unless="$(eval arg('local_planner') == 'dwa')"/>
+    <rosparam file="$(find robot_dog_navigation)/config/dwa_planner.yaml" command="load" if="$(eval arg('local_planner') == 'dwa')"/>
     <rosparam file="$(find robot_dog_navigation)/config/global_planner.yaml" command="load"/>
     <rosparam file="$(find robot_dog_navigation)/config/costmap_common.yaml"
               command="load" ns="global_costmap"/>
@@ -148,10 +184,19 @@
     <param name="enable_motion" value="$(arg enable_motion)"/>
     <param name="cmd_vel_topic" value="/cmd_vel"/>
     <param name="drive_mode" value="dog"/>
-    <param name="x_scale_ref" value="4.0"/>
+    <!-- x_scale_ref=0.2: 0.2 m/s 即映射到满步长；旧值 4.0 下 move_base 典型
+         0.1~0.2 m/s 只映射到步长 12.1~12.3（firmware 死区 ~12），狗几乎不动
+         而 yaw 步长 55+ 明显，表现为"只能左右转"。 -->
+    <param name="x_scale_ref" value="0.2"/>
+    <param name="linear_motion_value" value="25"/>
     <param name="yaw_scale_ref" value="2.0"/>
     <param name="yaw_min_step" value="15"/>
-    <param name="x_min_step" value="5"/>
+    <!-- XGO firmware ignores motion steps below ~12 (dead zone), so the x
+         floor must stay above it or the robot turns in place but never
+         advances (mapped step was 5-8 for typical move_base vx). 实测 13 仍
+         接近死区，抬到 15 并放宽 yaw 死区，让直线段优先发 x。 -->
+    <param name="x_min_step" value="15"/>
+    <param name="dead_zone_wz" value="0.10"/>
     <param name="watchdog_sec" value="0.5"/>
   </node>
 </launch>

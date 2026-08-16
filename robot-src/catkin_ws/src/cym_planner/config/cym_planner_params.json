@@ -9,7 +9,8 @@
         "odom_frame": "odom",
 
         # 前视距离，数值越大越平滑，数值越小越贴近路径
-        "lookahead_distance": 0.5,
+        # 实机放宽 0.5→1.0：追线更平滑，减少紧贴路径的频繁转向
+        "lookahead_distance": 1.0,
 
         # 前进速度增益：前方路径点距离乘以该值，决定提速快慢
         "linear_x_gain": 10.0,
@@ -40,7 +41,8 @@
         "final_yaw_max_vel": 0.4,
 
         # 终点方向误差小于该值即视为完成，单位 rad。
-        "final_yaw_tolerance": 0.08,
+        # 实机放宽 0.08→0.15：到点转正不用长时间原地调整（主流程逐点导航）
+        "final_yaw_tolerance": 0.15,
 
         # 终点方向对准时保留的前后微调增益；设为 0 可只原地旋转。
         "final_linear_x_gain": 1.5,
@@ -50,7 +52,8 @@
         "carry_speed_scale": 0.80,
 
         # 车头方向容差，单位 rad；当前边走边转逻辑中保留备用
-        "heading_tolerance": 0.20,
+        # 实机放宽 0.20→0.60：直线段容忍朝向偏差，减少频繁转向停留
+        "heading_tolerance": 0.60,
 
         # 局部轨迹模拟时长，单位秒
         "simulation_time": 0.3,
