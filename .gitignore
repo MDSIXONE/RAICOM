@@ -35,3 +35,6 @@ __pycache__/
 
 # Robot disk images (too large to track)
 /dogimage/
+
+# Simulation debug logs
+/*.log
