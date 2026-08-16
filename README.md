@@ -40,6 +40,7 @@
 项目根目录/
 ├── archive/
 ├── blender-maps/
+├── catkin_ws/
 ├── competition-rules/
 ├── datasets/
 ├── docs/
