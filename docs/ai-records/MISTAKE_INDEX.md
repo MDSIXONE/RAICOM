@@ -35,6 +35,15 @@
 - xgolib 关节反馈读取：2026-08-14.md
 - SSH 长时进程/stdout 管道：2026-08-14.md
 - XGO 多舵机同步/串口发包：2026-08-14.md
+- launch env 覆盖/roslaunch auto-master：2026-08-15.md
+- 部署丢可执行权限：2026-08-15.md
+- WSL 后台进程生命周期：2026-08-15.md
+- CRLF 污染脚本：2026-08-15.md（另见 2026-08-03）
+- IMU 绝对 yaw 当坐标基准：2026-08-15.md
+- 激光扫描点转换符号与标准约定相反：2026-08-15.md
+- XGO 运动步进死区/cmd_vel 桥映射：2026-08-08.md、2026-08-15.md
+- 桥 yaw 优先分支/速度映射实测：2026-08-15.md
+- 导航规划失败/地图未知区排查：2026-08-08.md、2026-08-15.md
 
 ## 按日期
 
@@ -116,3 +125,13 @@
 - xgomini 运行库 read_motor 无法解析 15 个舵机反馈
 - SSH stdout BrokenPipeError 终止长时抓球程序
 - xgolib motor 列表接口不是原子多舵机同步
+
+### 2026-08-15
+
+- launch env 硬编码 local_master_ip 覆盖命令行 export
+- scp/docker cp 覆盖部署丢可执行权限
+- WSL 后台进程随 wsl.exe 返回被清理
+- CRLF 污染仓库 shell/Python 脚本
+- simple_odom 用 IMU 绝对 yaw 当基准导致机器朝向斜
+- cmd_vel 桥 x 步长死区 + yaw 优先分支导致实机"只转不走"
+- 实机建图未扫全：右下角未知区导致 navfn 规划失败

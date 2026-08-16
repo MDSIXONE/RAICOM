@@ -12,6 +12,9 @@
 | 同时驱动 4 个轮子 | 四个轮子同时同速转动指定时长，用于验证四轮驱动/前进能力 | [#同时驱动-4-个轮子](#同时驱动-4-个轮子) |
 | 小臂减才是前伸 / 机械臂关节 | XGO mini3W 机械臂关节方向标定：51 爪、52 小臂（负=前伸）、53 大臂（正=前抬）；arm_polar 不可靠，用 motor 直控 | [#机械臂关节](#机械臂关节) |
 | 低趴 | 已确认的完整抓取准备姿态：车体低趴、后肢抬高与机械臂到位 | [#低趴](#低趴) |
+| 放球 | 抓球的逆操作：低趴后机械臂安全伸出（爪保持闭合持球）、张爪让球落下、再安全收臂 | [#机械臂关节](#机械臂关节) |
+| 抓完掉头放球 / 旋转180度 | 一键编排 `ball_grab_release.py`：抓球程序 → rotate.py 旋转 180° → 放球程序 | [#抓完掉头放球](#抓完掉头放球) |
+| 主流程 / 跑主流程 | 上电后全自动：定点巡航 5 点 → 抓球放球（`main_flow.py --enable-motion`） | [#主流程](#主流程) |
 | 放 catkin / 代码存放地 | 本次比赛任务代码统一写入 `robot-src/catkin_ws/src/`（原厂程序不删、不入 catkin） | [#放-catkin](#放-catkin) |
 
 ## 机器IP
@@ -101,9 +104,17 @@
 - **抓球可用序列**（ball_green.py catch_arm，2026-08-13 实机验证可调参）：
   爪子最大张开(51:-65) → 小臂前伸(52:-50) → 大臂前抬(53:+90) → 小臂前伸到位(52:-45) →
   爪子闭合(51:+40) → 收大臂(53:0) → 收小臂(52:0)
-- **YOLO 抓球程序的车体 yaw 补偿**（`ball_yolo_grab.py`，2026-08-14）：
-  低趴命令后补 `attitude('y', -6)` 补偿机械臂左偏；夹球序列收臂完成后
-  补 `attitude('y', 0)` 把车体姿态复原。
+- **放球可用序列**（`robot_dog_ball_grab/scripts/ball_release.py`，2026-08-15，
+  抓球末端状态的逆操作，含视觉跟踪对齐）：
+  低趴(z=10、p=15，接近阶段不加 yaw 补偿) → **视觉跟踪对齐**（YOLO 球模型暂代：|dx|>25 转向、
+  半径<28 前进脉冲，与抓球接近阶段一致，达标输出 `action=align-complete`；60s 超时输出
+  `action=align-timeout` 后仍继续放球）→ 重新低趴(z=10、p=15、y=-3 放球瞬间补偿) →
+  抬后肢(31=26、41=25) → 小臂前伸(52:-50) → 大臂前抬(53:+90) → 小臂前伸到位(52:-45) →
+  张爪放球(51:-65，默认等待 1s) → 收大臂(53:0) → 收小臂(52:0) → yaw 复原(y=0)
+- **YOLO 抓球程序的车体 yaw 补偿**（`ball_yolo_grab.py`，2026-08-14/15 实机修正）：
+  补偿只在**抓球瞬间**（grab）使用 `y=-3`（原 -6 调小），接近阶段（prepare_approach_pose）
+  不加补偿，否则车体会向右偏斜；夹球序列收臂完成后补 `attitude('y', 0)` 复原。
+  放球程序放球瞬间同款 `y=-3`（--drop-yaw 可调）。
 - **不是**：不是 arm_polar 参数可盲调（极坐标黑盒无文档）；52 的正值不是前伸；
   `x_distance.txt`（默认 22）决定抓取触发距离，距离不够时先看爪子前伸量再看它。
 - **权威来源**：`/home/pi/RaspberryPi-CM5/robots/Mini3W_W/demos/ball.py`（厂商示例）、
@@ -137,6 +148,43 @@
 - **不是**：不是把原厂程序从 host-services 删除；不是部署到机器（catkin 只是仓库内
   代码组织，机器部署路径仍按各自文档，如 `/home/pi/oumax-xgo/`）。
 - **权威来源**：2026-08-14 用户指令确认；落地样例 `robot-src/catkin_ws/src/robot_dog_ball_grab/`。
+
+## 抓完掉头放球
+
+- **等价说法**：抓完掉头放球、旋转180度、夹球程序完后旋转180度运行放球程序、掉头放球。
+- **含义**：一键编排程序 `ball_grab_release.py`：顺序运行抓球程序（ball_yolo_grab.py）→
+  旋转程序（rotate.py，turn 脉冲掉头 180°，默认速度 -15、时长 9s）→ 放球程序（ball_release.py）。
+- **前置条件**：机器端 `/home/pi/oumax-xgo/` 下已部署 `ball_grab_release.py`、`rotate.py`、
+  `ball_release.py`、`ball_yolo_grab.py` 四个脚本（编排按同目录解析）。
+- **精确动作**：`python3 ball_grab_release.py --enable-motion`；日志按
+  `stage=1/3`…`action=grabrelease-complete` 输出。
+- **不是**：不是让抓球程序内部掉头（抓球/放球程序本体未被修改）；180° 掉头用
+  `dog.turn` 转向脉冲实现（`dog.attitude("y", 180)` 大角度命令实机不生效，已弃用），
+  时长按实机标定（当前 9s）。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_ball_grab/scripts/ball_grab_release.py`。
+
+## 主流程
+
+- **等价说法**：跑主流程、主流程、上电后全自动、定点巡航抓球放球。
+- **含义**：比赛全自动主流程脚本 `robot_dog_navigation/scripts/main_flow.py`：
+  以当前位姿为起点，依次定点 5 个点（前方 2.3 m 右转 90° → 右方 0.5 m → 右方
+  1.65 m → 左方 0.575 m 回撤，朝向 180° → 前进 1 m 朝向与第一点相同），全部
+  到达后运行抓球放球一键编排 `ball_grab_release.py`（抓球 → 掉头 180° → 放球）。
+- **前置条件**：`robot_dog_main.launch` 已用 AMCL 定点模式启动（`use_amcl:=true
+  map_file:=ricam_arena_mapped.yaml init_x:=0.0 init_y:=0.0 init_yaw:=0.0`），
+  机器在出发区与地图原点对齐摆放；主流程脚本与四个球脚本同目录部署
+  （机器端 `/home/pi/oumax-xgo/`）。
+- **精确动作**：机器终端执行 `bash /home/pi/run_main_flow.sh`（一键：容器内跑
+  导航 5 点 → ssh 本机停 oumax-manual 释放串口 → xgovenv python 跑
+  `ball_grab_release.py --enable-motion`）。不带 `--enable-motion` 时只导航不
+  抓球（与球编排门禁一致）。路径距离/角度全部参数化
+  （`--forward-m`/`--side-distances`/`--final-forward-m`/`--turn-deg`），
+  实机标定时方向反了把对应参数取负。
+- **不是**：不是只跑定点（单点用 RViz 2D Nav Goal 或直接发 goal）；不是让
+  球编排脚本自己导航（主流程负责导航，球程序只负责视觉抓/放）；右侧距离
+  当前按地图已知区临时收缩为 `0.5,0.25,-0.575`，补扫地图右下角后恢复
+  `0.5,1.65,-0.575`。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_navigation/scripts/main_flow.py`。
 
 ## 抓取准备姿态下的球像素基准
 

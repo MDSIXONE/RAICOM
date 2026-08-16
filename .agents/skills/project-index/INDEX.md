@@ -1,9 +1,8 @@
 # RAICOM 睿抗机器人大赛智能配送项目 结构索引
 
-- 更新时间：2026-08-14
+- 更新时间：2026-08-15
 
 ## 总体结构
-
 ```
 RAICOM/
 ├── .agents/skills/            # 随仓库同步的 AI 技能（工作记录、提交规范、本索引）
@@ -46,13 +45,13 @@ RAICOM/
 | 赛事规则 | `competition-rules/` | 2026 睿抗国赛物流配送足式 4.2 规则 PDF 与摘要 | - |
 | 机器狗 ROS 启动 | `robot-src/catkin_ws/src/robot_dog_bringup` | 整机 bringup 与主 launch、系统状态脚本（system_status.py） | - |
 | 雷达驱动 | `robot-src/catkin_ws/src/robot_dog_lidar` | YDLIDAR 只读扫描发布节点（ydlidar_scan_node.cpp） | - |
-| 导航 | `robot-src/catkin_ws/src/robot_dog_navigation` | 离线本地导航演示：move_base/costmap/maps/rviz，含 mock 雷达、简单里程计、TF 脚本 | - |
+| 导航 | `robot-src/catkin_ws/src/robot_dog_navigation` | 离线本地导航演示：move_base/costmap/maps/rviz，含 mock 雷达、简单里程计、TF 脚本；`scripts/main_flow.py` 为比赛主流程（定点巡航 5 点 → 抓球放球一键编排） | - |
 | 自定义规划 | `robot-src/catkin_ws/src/cym_planner` | 自定义全局规划器（C++，plugin 化，参数 JSON） | - |
 | 定位 | `robot-src/catkin_ws/src/jie_ware` | 激光定位 lidar_loc、雷达滤波、costmap 清理（C++ 节点 + launch） | - |
 | 遥操作 | `robot-src/catkin_ws/src/robot_dog_teleop` | 键盘脉冲/物理键盘/pose/机械臂/球对齐抓取等多种遥操作模式 + 宿主机 systemd/handover 部署 | - |
 | YOLO 数据采集 | `robot-src/catkin_ws/src/robot_dog_yolo_dataset` | 定时间隔抓图用于 YOLO 数据集（yolo_image_collector.py） | - |
 | 地图字母采集训练 | `scripts/capture_map_photos.py` + `datasets/yolo/abcd/` | 从机器狗 8090 流抓帧采集地图照片，YOLO 训练 A/B/C/D（配套 split/train 脚本与工作流文档） | `docs/map-abcd-yolo-workflow.md` |
-| 抓球任务 | `robot-src/catkin_ws/src/robot_dog_ball_grab` | 本次抓球任务代码包：机器端独立 YOLO 抓球程序（ball_yolo_grab.py，厂商硬件接口 + ONNX 球模型） | - |
+| 抓球/放球任务 | `robot-src/catkin_ws/src/robot_dog_ball_grab` | 本次抓球/放球任务代码包：ball_yolo_grab.py（YOLO 抓球）、ball_release.py（放球）、rotate.py（180° 旋转）、ball_grab_release.py（抓→转→放一键编排） | - |
 | 机器端非 ROS 服务 | `robot-src/host-services/oumax-xgo/manual_control_server.py` | 机器上 /home/pi/oumax-xgo 的手动控制常驻服务（systemd 运行） | - |
 | 离线场地地图 | `blender-maps/ricam_arena/navigation/` | 10cm 栅格地图（pgm/yaml/json/png，含编号网格） | - |
 | 场地 Gazebo 模型 | `blender-maps/ricam_arena/gazebo/` | arena.world + obj/mtl 模型与预览图 | - |

@@ -1,5 +1,104 @@
 # 代码改动记录
 
+## 2026-08-15｜主流程实机首跑：只转不走，桥 x 步长死区修复（进行中）
+
+- 状态：进行中
+- 目标：实机跑通主流程（定点巡航 5 点 → 抓球放球）；首跑发现"只能左右转、无法前进"。
+- 影响文件：`robot-src/catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`（桥参数 x_scale_ref 4.0→0.2、新增 linear_motion_value 25、x_min_step 12→15、dead_zone_wz 0.05→0.10）；`robot-src/catkin_ws/src/cym_planner/config/cym_planner_params.json`（lookahead_distance 0.5→1.0、heading_tolerance 0.2→0.6、final_yaw_tolerance 0.08→0.15）；部署版 `/home/pi/ros_ws/...` 与 `/home/pi/run_main_flow.sh` 已同步（md5 校验一致）；`docs/ai-records/mistakes/2026-08-15.md`、`MISTAKE_INDEX.md`、`CHANGE_LOG.md`。
+- 实施记录：系统改为机器端本地 master（容器 roscore + robot_dog_main.launch，local_master_ip:=192.168.137.157，AMCL 模式，init 0,0,0，enable_motion:=true）；主流程经 `/home/pi/run_main_flow.sh` 一键执行（容器内跑导航，导航完成后 ssh 本机停 oumax-manual 释放串口并跑 ball_grab_release.py，容器→宿主机 ssh 免密已配置）。首跑失败"只转不走"：根因①桥 x 映射 x_scale_ref=4.0 使 vx 0.1~0.8 只映射到步长 12~13（XGO 固件死区边缘，实测 13 不动），yaw 步长 17~27 明显；根因②桥 yaw 优先分支在 vx/wz 同时非零时吃掉 x。修复（x_scale_ref=0.2、linear_motion_value=25、x_min_step=15、dead_zone_wz=0.10）后单点测试桥发出 x=25 满步长、狗实际前进；主流程重跑 waypoint1 (2.3,0) 12s 真到达、waypoint2 4s，waypoint3 仍 ABORTED——原因：实机地图 `ricam_arena_mapped`（8-15 03:42 建图）右下角未扫到（y≤-1.2 全未知，navfn 把 unknown 当 lethal），且 y=-0.85~-1.1 存在实时障碍膨胀高代价带（cost 99-100）。按用户要求放宽追线参数（lookahead 1.0 / heading_tolerance 0.6 / final_yaw_tolerance 0.15）并把 `--side-distances` 缩到已知区（0.5,0.25,-0.575，y≥-0.75）。
+- 验证：单点测试（0.5m goal）桥发 x=25 步长、狗实际前进（用户确认）；主流程 waypoint1/2 真走通；waypoint3 缩点后尚未实机复测（机器断电）。
+- 遗留风险：地图右下角缺失导致原路径（右方累计 2.15m）不可达——最终比赛路径需补建图扫右下角后恢复 0.5,1.65,-0.575；实时障碍膨胀带（y<-0.85）在实机布局确认前限制右侧活动范围；手控服务 06:24 曾卡死 07:05 被 systemd 重启（原因未查）；AMCL 曾假定位（odom/激光匹配行为待观察）；x=15/25 步长与放宽后的追线参数实机效果待复测。
+- DWA 对比验证（新增）：为验证"局部规划器追线/容差是否导致走走停停"，新增标准 DWA 切换：`robot_dog_main.launch` 加 `local_planner` arg（cym 默认 / dwa 可选），新增 `robot_dog_navigation/config/dwa_planner.yaml`（DWAPlannerROS 参数：max_vel_x 0.4、xy_goal_tolerance 0.10、yaw_goal_tolerance 0.15 等）；`move_base.yaml` 的 base_local_planner 移到 launch 按 arg 设置。机器来电后部署并 `local_planner:=dwa` 重启 launch，单点/主流程对比狗的行为，排除/确认 cym_planner 参数问题。
+
+## 2026-08-15｜主流程：定点巡航 → 抓球放球 一键编排
+
+- 状态：改动完成
+- 目标：按用户要求写比赛主流程：上电后定点前方 2.3 米（朝向与初始相差 90° 向右），再依次定点右方 0.5/1.65 米（累计 2.15 米）与左方 0.575 米（回撤至累计 1.575 米，朝向与初始呈 180°），最后沿当前朝向前进 1 米（朝向与第一个点相同），随后运行抓球放球程序。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_navigation/scripts/main_flow.py`；`CMakeLists.txt`（catkin_install_python 声明）；`README.md`（新增「主流程」章节）；`docs/lingo.md`（新增「主流程」词条）；`.agents/skills/project-index/INDEX.md`（导航行说明更新）；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：路径以起点为原点、初始朝向为 0 基准的相对位姿定义（x 前 y 左、右转 yaw 为负），再经旋转叠加到地图绝对坐标，与实机建图方向解耦（起点按 AMCL 原点摆放 init 0,0,0 时即等价绝对路径）；5 个点依次经 actionlib 发 move_base goal 并等待 SUCCEEDED（失败/超时报错退出，无 pass-through——每个点都需要转向到位）；全部到达后 subprocess 运行同目录 `ball_grab_release.py`（默认路径同目录解析，`--grab-release-script` 可覆盖），`--enable-motion` 门禁透传。距离/角度全部参数化（`--forward-m 2.3 --side-distances 0.5,1.65,-0.575 --final-forward-m 1.0 --turn-deg 90`，side 正值=右方、负值=左方），实机标定时可调，方向反了把对应参数取负。
+- 验证：本地 `py_compile` 通过；`build_waypoints`/`to_map` 纯逻辑自检：起点面向南场景下 P1(0,-2.3) 朝西 → P2(-0.5,-2.3)/P3(-2.15,-2.3) 朝北 → P4(-1.575,-2.3)（左方回撤 0.575）朝北 → P5(-1.575,-1.3) 朝西，终点落在场地左下角球区附近，全部点在场内。P4 方向按用户修正为左方 0.575 m（`--side-distances` 第三项取负）。
+- 遗留风险：实机尚未运行验证；move_base 带朝向 goal 的原地转向（90°/180°）此前只验证过直线前进，需实机确认；起点默认从 tf 读取（AMCL 收敛后），若起点与地图原点有偏差，路径会整体偏移；主流程需部署到机器端 ROS 容器（脚本 + 球编排同目录），球程序路径与串口控制权按部署形态确认。
+
+## 2026-08-15｜实机定点导航：地图修正 + AMCL 定位替代 lidar_loc
+
+- 状态：实机验证通过
+- 目标：实机定点导航"掉头向后走"问题（已修 lidar_loc y 镜像后仍不稳定），切换 AMCL 定位并修正实机地图。
+- 影响文件：`robot-src/catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`（新增 `use_amcl` arg：true 时起 amcl 替代 lidar_loc，参数 base_frame_id=base_link / scan_topic=/scan_filtered / likelihood_field / initial_pose 取 init_x/y/yaw / min-max particles 500-2000）；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：实机排查发现（1）launch 默认 `map_file` 是离线小地图 `ricam_arena`（3×2.5m），实机应加载建图保存的 `ricam_arena_mapped`（1312×1312 @ 0.02m，origin [-12.38,-12.14]），且机器在原点摆放时应 `init_x:=0.0 init_y:=0.0`（launch 默认 -0.70/1.00 是离线小地图位姿）；（2）lidar_loc 贪心匹配（±1°±1px 局部搜索、收敛判据只看 10 帧稳定不看质量）在实机场地持续漂移（yaw 15-70°、位置跳变），换 AMCL 后收敛稳定；（3）多次 roslaunch 残留同名节点注册导致新节点被挤掉（"new node registered with same name"），需先清干净再启动。
+- 验证：实机 `use_amcl:=true map_file:=ricam_arena_mapped.yaml init_x:=0.0 init_y:=0.0 init_yaw:=0.0` 启动，amcl 收敛于 (0,0,0) 稳定；发 goal (1.0, 0.0)，`Goal reached`，终点 (0.989, -0.020, yaw 4.9°)，直线前进无掉头。
+- 遗留风险：lidar_loc 仍保留在 launch（use_amcl 默认 false），修复后的 y 符号改动已部署但未再单独实测；amcl 参数（粒子数、laser_max_range=8.0）未做长距离/复杂场景调优；amcl 需 initial_pose 大致正确（原点摆放 + init 参数对齐已验证）。
+
+## 2026-08-15｜修复 lidar_loc 激光点云 y 镜像导致定位 180° 错位
+
+- 状态：改动完成
+- 目标：修复定点导航"定点在前方、机器掉头向后走"问题。静态分析定位到 `lidar_loc.cpp` 扫描点转换用 `y = -r*sin(angle)`，与仓库其他节点（`scan_to_cloud_and_body.py`、`scan_circle_filter.py` 均为标准 `+sin`）相反，点云左右镜像 → 贪心匹配收敛到 180° 镜像位姿 → `map→base_link` 朝向错 → cym_planner 掉头。
+- 影响文件：`robot-src/catkin_ws/src/jie_ware/src/lidar_loc.cpp`（`y_laser` 去掉负号）；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：仅改 `y_laser = -r*sin(angle)` → `y_laser = r*sin(angle)` 一行，并加注释说明标准约定。`lidar_is_inverted` 分支基于 TF roll 检测，本项目 `laser_frame_tf.py` 发布单位旋转（roll=0）不触发，无需改动；`initialPoseCallback`/`pose_tf` 的 yaw 双取负互相抵消，也不动。
+- 验证：静态比对三处 scan 转换公式（lidar_loc / scan_to_cloud / scan_circle_filter）确认只有 lidar_loc 一处负号；LSP 报错均为本机缺 ROS 头文件的环境噪音。
+- 遗留风险：实机需重新 `catkin_make --pkg jie_ware` 并部署（按惯例先备份至 `/home/pi/ros_ws/backups/`）；`lidar_loc` 须与 `initial_pose_publisher` 同启（单独重启会卡地图原点）；改后实机验证顺序：RViz `/lidar_points` 与 `/map` 重合 → `tf_echo map base_link` RPY 与狗头一致 → 2D Nav Goal 全程。**不需要重新建图**（地图由 gmapping 标准转换生成，一直正确；bug 只污染 map→odom TF）。
+
+## 2026-08-15｜放球/旋转/编排程序并入抓球包 robot_dog_ball_grab
+
+- 状态：改动完成
+- 目标：按用户要求把所有程序（抓球、放球、旋转、一键编排）统一放入 `robot_dog_ball_grab` 包。
+- 影响文件：移动 `ball_release.py`/`rotate.py`/`ball_grab_release.py` 至 `robot-src/catkin_ws/src/robot_dog_ball_grab/scripts/`；删除 `robot_dog_ball_release/` 包；`robot_dog_ball_grab/{CMakeLists.txt,README.md,package.xml}` 更新（四脚本安装声明、合并文档）；`docs/lingo.md`（放球序列/抓完掉头放球/yaw 补偿词条按实机标定更新）、`.agents/skills/project-index/INDEX.md`（合并抓球/放球任务行）、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：四脚本同目录（仓库 `scripts/` 与机器端 `/home/pi/oumax-xgo/` 形态一致）；编排脚本移除 `_find_script` 分包回退逻辑（同目录直接解析）；README 汇总实机标定参数：抓球瞬间与放球瞬间 y=-3 补偿（原 -6 调小）、接近阶段不加补偿、180° 掉头 turn 脉冲 9s（attitude y=180 不生效已弃用）、放球对齐 60s 超时后继续放球。
+- 验证：四脚本本地 `py_compile` 通过；放球包目录已删除（Test-Path False）。
+- 遗留风险：机器端 `/home/pi/oumax-xgo/` 四脚本与仓库需保持同步（本次移动不改程序内容，仅仓库组织变化；机器端编排脚本已同步最新版）。
+
+## 2026-08-15｜抓球→旋转180°→放球 一键编排程序
+
+- 状态：进行中
+- 目标：按用户要求写一个编排程序：抓球程序完成后旋转 180 度，再运行放球程序。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_ball_release/scripts/{rotate.py,ball_grab_release.py}`、`CMakeLists.txt`、`README.md`；`docs/lingo.md`、`.agents/skills/project-index/INDEX.md`、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：待更新。
+- 验证：待更新。
+- 遗留风险：待更新。
+
+## 2026-08-15｜抓球→旋转180°→放球 一键编排程序
+
+- 状态：改动完成
+- 目标：按用户要求写一个编排程序：抓球程序完成后旋转 180 度，再运行放球程序。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_ball_release/scripts/{rotate.py,ball_grab_release.py}`、`CMakeLists.txt`（新增两脚本安装声明）、`README.md`（新增「一键编排」章节）；`docs/lingo.md`（高频索引「抓完掉头放球」行，指向新词条「抓完掉头放球」）、`.agents/skills/project-index/INDEX.md`（放球任务行说明更新）、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：三个独立进程顺序串联，各自取得/释放串口控制权，避免跨进程串口竞争，且不改动已实机验证的抓球/放球程序本体：阶段 1 `ball_yolo_grab.py`（透传 --model/--target-radius/--confidence）、阶段 2 `rotate.py --yaw 180`（dog.attitude("y", 180) 目标角掉头，--settle 默认 3s 稳定）、阶段 3 `ball_release.py`；编排脚本默认按同目录解析脚本（机器端部署形态 /home/pi/oumax-xgo/），找不到时回退仓库分包相对路径；`--enable-motion` 门禁透传三阶段；日志 `stage=1/3`…`action=grabrelease-complete`。
+- 验证：三个脚本本地 `py_compile` 全部通过；编排默认路径解析逻辑静态复核（机器端同目录与仓库分包两种形态均可解析）。
+- 遗留风险：`dog.attitude("y", 180)` 大角度掉头尚未实机验证（若不可靠需改用 turn 转向脉冲并标定时长，README 已注明）；放球程序完成后的 yaw 复原以其进程启动时车体朝向为零位，编排链结束后车体保持掉头方向（符合预期，但整链实机效果待验证）；机器端三脚本 + 抓球脚本需先上传同目录。
+
+## 2026-08-15｜放球程序加入视觉跟踪对齐（球模型暂代）
+
+- 状态：改动完成
+- 目标：按用户要求在放球程序的低趴车体之后加入与抓球一致的模型跟踪对齐（模型先用球的模型代替），跟踪对齐达标后再执行放球动作。
+- 影响文件：`robot-src/catkin_ws/src/robot_dog_ball_release/scripts/ball_release.py`、`README.md`；`docs/lingo.md`（「机械臂关节」词条放球序列补视觉对齐段）、`.agents/skills/project-index/INDEX.md`（放球任务行说明更新）、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：`ball_release.py` 从纯动作程序升级为 低趴 → 视觉跟踪对齐 → 放球 三段流程：`prepare_low_pose`（slow_trot + 低趴 z=10/p=15/y=-6）；`align_to_target` 复用抓球程序同款 letterbox/detect_ball 与对齐参数（3 帧确认、|dx|>25 转向 15°×0.74s、半径<28 前进 3×0.15s、达标输出 `action=align-complete`），默认模型 `best.onnx`（球模型暂代，README 注明后续换 `letters.onnx`）；`drop_ball` 在放球前重新低趴（对齐脉冲可能让车体恢复站姿，沿用抓球 grab 分支经验），随后抬后肢、安全伸臂、张爪、安全收臂、yaw 复原。
+- 验证：本地 `py_compile` 通过；对齐阈值与脉冲参数与抓球程序逐项比对一致。
+- 遗留风险：放球时爪内持球，球模型能否在低趴姿态下稳定检出并支撑对齐（对齐的是视野中目标还是爪内球）需实机确认；若球模型不可用，应换 `letters.onnx` 字母模型并对齐 A/B/C/D 目标；对齐循环无超时保护（与抓球程序一致），视觉始终不达标时程序不会进入放球。
+
+## 2026-08-15｜simple_odom yaw 基准修复：建图起点朝向归零
+
+- 状态：改动完成
+- 目标：修复建图模式 RViz 里机器朝向斜约 26° 的问题——`simple_odom` 把 IMU 绝对磁力计朝向（实机当前 25.67°）当作 odom yaw 基准，而建图起点应为 yaw=0（机器正对地图 +X）。
+- 影响文件：`robot-src/catkin_ws/src/robot_dog_navigation/scripts/simple_odom.py`（`fetch_imu_yaw` 首帧基准 `raw` → `self.init_yaw`）。
+- 实施记录：修复后同步部署至实机容器（scp + docker cp，转 LF、chmod +x）；重启建图 launch（`local_master_ip:=192.168.137.193`）。
+- 验证：`tf_echo odom base_link` RPY = [0, 0, 0]；建图链路（slam_gmapping、ydlidar_scan、laser_frame_tf、scan_circle_filter、simple_odom）全部注册到 WSL master，/map 有发布者，/scan_filtered 数据流正常。
+- 遗留风险：`robot_dog_main.launch` 的 `local_master_ip` 默认值 192.168.137.232 已过时（WSL IP 由 DHCP 动态分配，现为 193），每次实机启动须手动传参，建议后续改为必填或自动探测；本次修复前已建的部分地图因重启已作废，需重新建图。
+
+## 2026-08-15｜新建放球功能包 robot_dog_ball_release
+
+- 状态：改动完成
+- 目标：按用户要求写一个与抓球相反的放球功能包：机器狗夹球到达目标区域后，低趴并张开爪子把球放下。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_ball_release/`（package.xml、CMakeLists.txt、README.md、scripts/ball_release.py）；`docs/lingo.md`（高频索引「放球」行 + 「机械臂关节」词条放球序列）、`.agents/skills/project-index/INDEX.md`（功能索引放球任务行）、`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：新包为与抓球包同构的标准 catkin 脚本包；`ball_release.py` 为纯动作程序（无相机/YOLO 依赖，球已在爪内），流程为抓球序列末端状态的逆操作：低趴(z=10、p=15、y=-6) → 抬后肢(31=26、41=25) → 安全伸臂持球(52=-50 → 53=90 → 52=-45) → 张爪放球(51=-65，默认等待 1s) → 安全收臂(53=0 → 52=0) → yaw 复原(y=0)；沿用抓球包的 `--enable-motion` 门禁与 `action=release-start/complete` 日志信号，参数表含 `--claw-open`、`--hold-after-open`。
+- 验证：本地 `py_compile` 通过；package.xml XML 解析通过。
+- 遗留风险：放球序列为抓球序列的对称逆推，尚未实机验证（张爪后球能否完全落下、-65 最大张开是否让球滚出目标区域待现场观察，可用 `--claw-open`/`--hold-after-open` 调整）；机器端部署路径 `/home/pi/oumax-xgo/ball_release.py` 尚未上传。
+
+## 2026-08-15｜恢复 ABCD YOLO 数据集并完善批量标注分段参数
+
+- 状态：改动完成
+- 目标：恢复 `datasets/yolo/abcd/` 中已验证的 ABCD YOLO 数据集，并为自动标注脚本增加分段并行处理参数。
+- 影响文件：`scripts/auto_label_abcd.py`；恢复 `datasets/yolo/abcd/` 的已提交数据集文件。
+- 验证：已从 HEAD 恢复 `data.yaml`、train/val 数据、110 个字母标签及 3000 张原图；确认类别为 A/B/C/D、类别索引为 0/1/2/3。
+- 遗留风险：工作区保留了本次 OCR 抽样产生的少量未跟踪临时 txt/图片文件，未纳入数据集。
+
 每个改动单元的状态只能使用“进行中”或“改动完成”。
 
 ## 2026-08-15｜ABCD 字母 YOLO 数据集与训练产物全量入库

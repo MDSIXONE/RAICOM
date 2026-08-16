@@ -135,13 +135,19 @@ rosrun map_server map_saver -f /root/catkin_ws/src/robot_dog_navigation/maps/ric
 
 ```bash
 docker exec ros-noetic bash -lc "pkill -f 'roslaunch[ ]robot_dog_main' 2>/dev/null; sleep 2"
-docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /root/catkin_ws/devel/setup.bash; export ROS_MASTER_URI=http://<WSL_IP>:11311; export ROS_IP=192.168.137.157; roslaunch robot_dog_bringup robot_dog_main.launch enable_motion:=true map_file:=/root/catkin_ws/src/robot_dog_navigation/maps/ricam_arena_mapped.yaml > /tmp/main_launch.log 2>&1"
+docker exec -d ros-noetic bash -lc "source /opt/ros/noetic/setup.bash; source /root/catkin_ws/devel/setup.bash; export ROS_MASTER_URI=http://<WSL_IP>:11311; export ROS_IP=192.168.137.157; roslaunch robot_dog_bringup robot_dog_main.launch enable_motion:=true use_amcl:=true map_file:=/root/catkin_ws/src/robot_dog_navigation/maps/ricam_arena_mapped.yaml init_x:=0.0 init_y:=0.0 init_yaw:=0.0 > /tmp/main_launch.log 2>&1"
 ```
 
-导航模式加载 `ricam_arena_mapped`，`/slam_gmapping` 消失、`/map_server` 与
+导航模式加载 `ricam_arena_mapped`（实机建图保存的地图，**不是**离线小地图
+`ricam_arena`），`/slam_gmapping` 消失、`/map_server` 与
 `/move_base` 恢复；此时在 rviz 用 2D Nav Goal 选点即进入 cym_planner 导航。
-注意：导航模式的 `init_x/init_y` 默认 (-0.70, 1.00)，若机器起点与建图原点不一致，
-用 `init_x:=0.0 init_y:=0.0` 等参数对齐。
+机器摆放在建图原点时用 `init_x:=0.0 init_y:=0.0` 对齐（launch 默认
+-0.70/1.00 是离线小地图位姿，对 mapped 地图是错的）。
+定位建议用 `use_amcl:=true`（AMCL 概率定位，稳定；lidar_loc 贪心匹配在
+实机持续漂移且无法自纠，已弃用，保留 use_amcl:=false 供链路验证）。
+启动前务必清理残留同名节点：多次 roslaunch 留下的同名注册会让新节点被挤掉
+（日志 "new node registered with same name"），重启前
+`docker exec ros-noetic bash -lc "pkill -9 -f 'roslaunch|move_base|amcl|lidar_loc'"`。
 
 ## 8. 定点导航的激光定位（jie_ware lidar_loc）
 
