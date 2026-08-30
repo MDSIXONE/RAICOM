@@ -81,6 +81,13 @@
 - 证据：12 份导入文件含硬编码云服务令牌或应用标识。
 - 替代方案或后续动作：在提交前执行覆盖多行赋值、令牌和服务商常见命名的独立扫描，并删除命中文件后重建校验清单。
 
+## 2026-08-17｜刷机 Ubuntu 22.04 原生跑 ROS1（评估否决）
+
+- 原方案：质疑 Docker 容器运行形态，改为把 CM5 从厂商预装系统刷成 Ubuntu 22.04，原生安装 ROS1 Noetic 跑导航栈。
+- 停止原因：官方支持矩阵三重互斥——① Ubuntu 22.04 官方树莓派镜像仅适配 Pi 2/3/4，不含 BCM2712 DTB，不支持 CM5（CM5 需 24.04 LTS 起）；② ROS1 Noetic 官方二进制仅支持 Ubuntu 20.04（REP 3），而 20.04 同样不支持 CM5 → **不存在任一版 Ubuntu 同时原生支持 CM5 + Noetic**；③ 更硬的是厂商相机栈 picamera2/libcamera 在 Ubuntu 25.04 之前不可用（LP: #2038669），即使刷 24.04 相机也起不来。
+- 证据：Canonical 官方硬件支持矩阵（Pi 5/CM5 在 22.04 列为空）、23.10 发布说明（首次支持 Pi 5、实验性）、24.04 发布说明（首个支持 Pi 5 的 LTS）、REP 3（Noetic 仅 Focal）、wiki.ros.org noetic 安装页（仅 20.04 仓库）。详见 2026-08-17 librarian 查证记录。
+- 替代方案或后续动作：维持 Docker 容器跑 ROS1 Noetic 的现状，补齐实机欠账——容器补 `/dev/ttyAMA0` 串口直通（2026-08-16 发现缺失），按 `docs/technical/2026-08-16-docker-runtime-unification.md` §2.1/§2.3 重建或 docker update 容器并验证。当前实机问题属设备直通配置缺失，非架构选型错误。
+
 ## 2026-08-02｜通用 Docker Hub 代理拉取 ROS 镜像
 
 - 原方案：先在 Docker 的 `registry-mirrors` 中配置 DaoCloud 并按标准标签拉取；随后使用 DaoCloud、Aityp 和 1ms 的公开代理路径拉取官方 ROS 摘要。

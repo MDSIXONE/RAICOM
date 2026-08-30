@@ -8,14 +8,14 @@
 - 运动限幅与运动标定：2026-08-08.md、2026-08-04.md
 - ROS 包管理与 launch 节点解析：2026-08-08.md
 - WSLg 显示/共享内存：2026-08-08.md
-- 进程管理（pkill/重连/双实例）：2026-08-08.md、2026-08-14.md
+- 进程管理（pkill/重连/双实例）：2026-08-08.md、2026-08-14.md、2026-08-16.md、2026-08-17.md
 - 导航与代价地图边界：2026-08-08.md
 - 雷达滤波/遮挡标定：2026-08-08.md
 - WSL 网络 IP/跨机器联调：2026-08-08.md、2026-08-03.md
 - ROS 日志排障（__log/ANSI）：2026-08-08.md
 - 数据集生成与文件名模式：2026-08-07.md
 - 终端交互（raw 模式/SSH 按键）：2026-08-05.md、2026-08-04.md
-- 跨 Shell 转义/CRLF：2026-08-05.md、2026-08-03.md
+- 跨 Shell 转义/CRLF：2026-08-05.md、2026-08-03.md、2026-08-15.md、2026-08-16.md
 - Catkin 工程结构/头文件路径：2026-08-05.md、2026-08-02.md
 - 串口控制权/systemd 就绪：2026-08-04.md、2026-08-03.md
 - ROS 安全边界与授权：2026-08-03.md
@@ -35,6 +35,7 @@
 - xgolib 关节反馈读取：2026-08-14.md
 - SSH 长时进程/stdout 管道：2026-08-14.md
 - XGO 多舵机同步/串口发包：2026-08-14.md
+- XGO 固件模式残留/测试脚本状态恢复：2026-08-16.md
 - launch env 覆盖/roslaunch auto-master：2026-08-15.md
 - 部署丢可执行权限：2026-08-15.md
 - WSL 后台进程生命周期：2026-08-15.md
@@ -45,6 +46,17 @@
 - 桥 yaw 优先分支/速度映射实测：2026-08-15.md
 - 导航规划失败/地图未知区排查：2026-08-08.md、2026-08-15.md
 - Codex 终端进程权限：2026-08-16.md
+- odom/里程计方案（foot 步态无编码器、打滑）：2026-08-16.md、2026-08-17.md
+- IMU 跳变过滤阈值/传感器特性：2026-08-17.md
+- TF 死锁/发布时序环：2026-08-17.md
+- 容器重建（设备直通/apt 包丢失）：2026-08-17.md
+- libcamera 容器枚举/udevd 依赖：2026-08-17.md
+- 树莓派硬件库容器检测绕过：2026-08-17.md
+- Python venv 包安装形态（editable/system-site）：2026-08-17.md
+- xgolib IMU 批量读协议（0x65）与固件版本不匹配：2026-08-17.md
+- ROS Noetic arm64 无 cartographer 预编译包：2026-08-17.md
+- 部署遗漏（改版后未重新部署容器旧版运行）：2026-08-17.md
+- 第三方节点参数传递方式（gflags vs ROS param）：2026-08-17.md
 
 ## 按日期
 
@@ -140,3 +152,22 @@
 ### 2026-08-16
 
 - Codex 工作区命令 CreateProcessAsUserW 错误 5
+- CRLF 污染 scp 部署的 Python 脚本：shebang `python3\r` 使 roslaunch 启动失败（复现 2026-08-15 同类）
+- 测试脚本修改 XGO 固件模式（enable_wheel_control）后未恢复，导致后续 move_x 全部失效
+- ssh 远程一键命令里 pkill -f 匹配到远程 shell 自身命令行，命令中断无输出（复现 2026-08-08 同类）
+
+### 2026-08-17
+
+- simple_odom yaw_jump_limit=0.4 丢弃脉冲式真实转向：odom 方向漂移 (4.88,2.49) vs 实际 (2.03,-0.19)
+- TF 发布者与消费者互相等待死锁（odom_from_amcl 等 amcl_pose、AMCL 等 laser→odom TF）
+- foot 步态机器人用 cmd_vel 积分 odom 不可信（无编码器打滑，架构级教训）
+- Docker update 不支持 --device-add：设备变更必须重建容器
+- 容器重建丢失容器内 apt 安装的包（cv_bridge），需重装
+- libcamera 容器内枚举相机依赖 udevd（/run/udev/data 数据库），缺之静默为空
+- rpi-lgpio 硬件检测容器内失败，用 RPI_LGPIO_REVISION 环境变量绕过
+- 厂商 venv 是 system-site-packages 且 uiutils 为 editable install：extra.pth 兜底不处理内层 .pth，需直接加 src 路径
+- pkill -f roslaunch 匹配 docker exec 自身命令行（复现 2026-08-08/16 同类）
+- xgolib read_imu() 0x65 批量读在 M-7.0.0b8 固件返回固件版本串（无 accel/gyro，需源码验证协议）
+- ROS Noetic 官方 apt 无 arm64 cartographer 预编译包（需源码编译）
+- 脚本改版后漏部署真机/容器导致实机跑旧版（imu_bridge fetch failed: 'accel'）
+- cartographer_node 1.0.0 用 gflags 命令行参数不读 ROS param（launch 需用 node args）

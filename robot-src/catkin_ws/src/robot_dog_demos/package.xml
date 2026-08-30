@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>robot_dog_demos</name>
+  <version>0.1.0</version>
+  <description>厂商 XGO 示例程序集合：Mini3W_W 机型 demos + common 通用示例，机器端运行，源自 08-02 全量设备源码快照。</description>
+
+  <maintainer email="1047840339@qq.com">RAICOM Team</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <export/>
+</package>

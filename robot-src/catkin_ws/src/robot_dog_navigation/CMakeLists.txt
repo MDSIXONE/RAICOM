@@ -15,6 +15,8 @@ catkin_package(
 )
 
 catkin_install_python(PROGRAMS
+  scripts/carto_odom.py
+  scripts/imu_bridge.py
   scripts/initial_pose_publisher.py
   scripts/main_flow.py
   scripts/mock_lidar_publisher.py

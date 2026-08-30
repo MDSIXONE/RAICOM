@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>robot_dog_follow_line</name>
+  <version>0.1.0</version>
+  <description>巡线（黑线跟随）程序包，源自厂商 demos/follow_line.py（Dog_LM 与 Mini3W_W 同版），机器端宿主机直接运行，Picamera2 视觉 + xgolib 直控。</description>
+
+  <maintainer email="1047840339@qq.com">RAICOM Team</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <export/>
+</package>

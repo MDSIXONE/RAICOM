@@ -59,14 +59,28 @@
        so move_base / cym_planner see the robot move.  In navigation mode the
        map -> odom TF is published by lidar_loc below; in mapping mode
        slam_gmapping publishes it, so no static map_to_odom exists here
-       (a static publisher would fight whichever node owns that transform). -->
+       (a static publisher would fight whichever node owns that transform).
+       odom_mode=cmd_vel（默认）：cmd_vel 积分 odom（foot 步态无编码器、打滑
+       不可信，仅兜底）；odom_mode=amcl：AMCL 位姿平滑回灌 odom（odom_from_amcl）；
+       odom_mode=carto：Cartographer 2D 纯激光 SLAM 作激光里程计发
+       odom -> base_link（use_imu_data=false，M-7.0.0b8 固件无原始 accel/gyro），
+       imu_bridge 发布 /imu（yaw 差分角速度，供 yaw 消费方与未来升级用）。 -->
+  <arg name="odom_mode" default="cmd_vel"/>
+  <!-- 历史参数：use_amcl:=true 等价于 odom_mode:=amcl，保留向后兼容 -->
+  <arg name="use_amcl" default="false"/>
   <node pkg="robot_dog_navigation" type="simple_odom.py"
-        name="simple_odom" output="screen">
+        name="simple_odom" output="screen"
+        unless="$(eval arg('use_amcl') or arg('odom_mode') != 'cmd_vel')">
     <param name="init_x" value="$(arg init_x)"/>
     <param name="init_y" value="$(arg init_y)"/>
     <param name="init_yaw" value="0.0"/>
     <param name="cmd_vel_topic" value="/cmd_vel"/>
     <param name="odom_topic" value="/odom"/>
+    <!-- odom_scale 标定（2026-08-16 实测）：move_x(25) 实测 0.185 m/s（锁轮
+         128 + move_x 3s：F1=50cm F2=61cm，轮子打滑/步态随机性 ±20% 为物理
+         现实，标定只能取近似）。scale = 0.185/0.8 ≈ 0.23。导航残余误差由
+         抓球/放球视觉闭环兜底。 -->
+    <param name="odom_scale" value="0.23"/>
   </node>
   <!-- Dynamic base_link -> laser_frame TF (published on /tf, not /tf_static):
        gmapping uses tf1 and never reads /tf_static. -->
@@ -92,7 +106,9 @@
     <param name="filtered_topic" value="/scan_filtered"/>
     <param name="center_x" value="0.0"/>
     <param name="center_y" value="0.0"/>
-    <param name="radius" value="0.45"/>
+    <!-- 半径 0.45→0.25：原值在空旷场地过滤后有效点仅 96/410，近处 0.45m 内
+         无特征 → AMCL 静止时激光匹配歧义大（reset 后漂移到错误位置）。 -->
+    <param name="radius" value="0.25"/>
     <param name="sector_center_deg" value="0.0"/>
     <param name="sector_half_width_deg" value="30.0"/>
     <param name="sector_max_range" value="1.0"/>
@@ -121,7 +137,6 @@
        restart lidar_loc alone, or it will sit at the map origin.
        Use use_amcl:=true to replace this brittle greedy scan matcher with
        the probabilistic AMCL localizer (also consumes /initialpose). -->
-  <arg name="use_amcl" default="false"/>
   <!-- 局部规划器选择：cym（默认，自定义 CymPlanner）/ dwa（标准 DWA，对比验证用） -->
   <arg name="local_planner" default="cym"/>
   <group unless="$(arg enable_mapping)">
@@ -152,6 +167,43 @@
         <param name="initial_pose_a" value="$(arg init_yaw)"/>
         <param name="transform_tolerance" value="0.5"/>
       </node>
+      <!-- AMCL 模式 odom：foot 步态无编码器、cmd_vel 积分不可信，直接把
+           AMCL 激光定位位姿平滑后作为 odom -> base_link（map->odom 由 AMCL
+           自动趋于恒等），见 odom_from_amcl.py 注释。与 simple_odom 互斥。 -->
+      <node pkg="robot_dog_navigation" type="odom_from_amcl.py"
+            name="odom_from_amcl" output="screen">
+        <param name="init_x" value="$(arg init_x)"/>
+        <param name="init_y" value="$(arg init_y)"/>
+        <param name="init_yaw" value="$(arg init_yaw)"/>
+        <param name="alpha" value="0.4"/>
+        <param name="motion_eps" value="0.005"/>
+        <param name="yaw_eps" value="0.005"/>
+      </node>
+    </group>
+    <!-- Cartographer 2D 激光里程计模式：cartographer_node 发布 odom -> base_link
+         （provide_odom_frame），lidar_loc 继续发布 map -> odom 全局修正。
+         需要 manual_control_server（8765）在宿主机运行以支撑 imu_bridge。 -->
+    <group if="$(eval arg('odom_mode') == 'carto')">
+      <!-- cartographer_node 1.0.0 用 gflags 命令行参数（不读 ROS param），
+           配置目录/文件名必须经 args 传入。 -->
+      <node pkg="cartographer_ros" type="cartographer_node"
+            name="cartographer_node" output="screen"
+            args="-configuration_directory $(find robot_dog_navigation)/config -configuration_basename cartographer_2d.lua">
+        <remap from="scan" to="/scan_filtered"/>
+      </node>
+      <node pkg="robot_dog_navigation" type="imu_bridge.py"
+            name="imu_bridge" output="screen">
+        <param name="imu_url" value="http://127.0.0.1:8765/imu"/>
+        <param name="rate" value="30.0"/>
+        <param name="imu_topic" value="/imu"/>
+      </node>
+      <!-- cartographer 只发 TF 不发 /odom 消息，由 carto_odom 桥补发
+           （只发消息不发 TF，避免与 cartographer 双发布者冲突）。 -->
+      <node pkg="robot_dog_navigation" type="carto_odom.py"
+            name="carto_odom" output="screen">
+        <param name="odom_topic" value="/odom"/>
+        <param name="rate" value="30.0"/>
+      </node>
     </group>
     <node pkg="robot_dog_navigation" type="initial_pose_publisher.py"
           name="initial_pose_publisher" output="screen">
@@ -179,7 +231,8 @@
     </node>
   </group>
 
-  <node pkg="robot_dog_teleop" type="oumax_cmd_vel_bridge.py"
+  <!-- cmd_vel 桥位于底层运动控制包 robot_dog_control -->
+  <node pkg="robot_dog_control" type="oumax_cmd_vel_bridge.py"
         name="oumax_cmd_vel_bridge" output="screen">
     <param name="enable_motion" value="$(arg enable_motion)"/>
     <param name="cmd_vel_topic" value="/cmd_vel"/>

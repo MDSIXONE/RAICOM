@@ -12,24 +12,43 @@
 
 ## 运行环境
 
-程序不在容器内运行，而是在机器端（OUMAX XGO mini3W，树莓派 CM5）宿主机直接运行，依赖：
+程序统一在机器端球容器 `ros-noetic-ball` 内运行（导航容器 `ros-noetic` 基于 Ubuntu
+Focal，与宿主机 Python 3.11 / libcamera 0.3 不兼容，故球程序用独立 Bookworm 容器，
+与宿主机同基线）：
 
-- `picamera2`、`cv2`、`numpy`、`onnxruntime`（机器端已装）
-- `uiutils` 的 `dog` 接口（厂商 `xgolib`，机器端 `/home/pi/RaspberryPi-CM5` 环境）
-- ONNX 模型：默认 `/home/pi/ros_ws/models/best.onnx`
+- 容器内自建 `ballenv`（`/opt/ballenv`）：numpy 1.24.2、opencv-python 4.11.0.86、
+  onnxruntime 1.20.0（与宿主 xgovenv 版本对齐）；
+- `.pth` 兜底复用宿主机 `/usr/lib/python3/dist-packages`（picamera2/libcamera/RPi）
+  与 xgovenv site-packages（uiutils/xgolib/xgoscreen，含 editable 的 uiutils src）；
+- 容器挂载宿主 `/home/pi`、`/dev`（全设备）、系统库与
+  libcamera IPA / libpisp / libcamera tuning 数据；容器内运行 udevd（libcamera
+  相机枚举依赖 /run/udev/data）。
+- ONNX 模型：默认 `/home/pi/ros_ws/models/best.onnx`。
+
+容器环境由 `host/setup_ball_container.sh` 一键配置（幂等，详见脚本头部注释）。
 
 ## 部署与运行
 
 ```bash
-# 上传到机器（四个脚本同一目录）
-scp scripts/*.py pi@192.168.137.157:/home/pi/oumax-xgo/
+# 1. 配置球容器（宿主机执行一次，幂等）
+bash robot-src/catkin_ws/src/robot_dog_ball_grab/host/setup_ball_container.sh
 
-# 机器端运行（默认只检测，不动作）
-python3 ball_yolo_grab.py
+# 2. 部署脚本：上传到机器 catkin_ws 本包（球容器内 /root/catkin_ws/...）
+scp scripts/*.py host/*.sh pi@192.168.137.157:/home/pi/ros_ws/src/robot_dog_ball_grab/{scripts,host}/
+scp scripts/*.py pi@192.168.137.157:/home/pi/ros_ws/src/robot_dog_ball_grab/scripts/
 
-# 允许真实运动
-python3 ball_yolo_grab.py --enable-motion
+# 3. 容器化运行（默认只检测，不动作；--release-camera-serial 先停
+#    oumax-camera/oumax-manual 释放相机与串口）
+bash robot-src/catkin_ws/src/robot_dog_ball_grab/host/run_ball_in_docker.sh \
+  --release-camera-serial -- --enable-motion
+
+# 等价的手动容器内命令
+docker exec ros-noetic-ball /root/catkin_ws/src/robot_dog_ball_grab/host/run_ball_in_container.sh \
+  --enable-motion
 ```
+
+主流程（`robot_dog_navigation/scripts/main_flow.py`）导航完成后经 ssh 在宿主机
+`docker exec` 进球容器运行本包球编排（见该包 README「主流程」章节）。
 
 运行前注意：先停 `raicom-original-main.service` 与 `oumax-camera.service`
 （原厂主服务占 SPI/串口、相机服务占 Picamera2，会导致 xgolib 挂死或相机打不开），

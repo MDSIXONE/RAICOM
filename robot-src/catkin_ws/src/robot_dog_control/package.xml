@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>robot_dog_control</name>
+  <version>0.1.0</version>
+  <description>底层运动控制包(cmd_vel 到 OUMAX 手控服务的桥接、急停与看门狗)</description>
+
+  <maintainer email="1047840339@qq.com">RAICOM Team</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>rospy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <export/>
+</package>

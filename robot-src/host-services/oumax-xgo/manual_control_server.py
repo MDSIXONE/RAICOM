@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import socket
@@ -376,13 +377,18 @@ def udp_dispatch_loop() -> None:
                 print(f"udp dispatch failed: {exc}", flush=True)
 
 
-def read_imu_angles() -> dict[str, float]:
-    """Read body attitude from the dog's on-board IMU (degrees)."""
+def read_imu_angles() -> dict[str, Any]:
+    """Read body attitude from the dog's on-board IMU via the single-axis
+    0x66/0x67/0x68 reads (degrees).  The batch read_imu() 0x65 protocol is
+    NOT usable on this M-7.0.0b8 firmware: it returns a firmware version
+    string, so no raw accel/gyro is available there.  yaw is an accumulated
+    angle (multi-turn), pitch/roll are small body angles."""
     bot = get_dog()
-    yaw = bot.read_yaw() if hasattr(bot, "read_yaw") else 0.0
-    pitch = bot.read_pitch() if hasattr(bot, "read_pitch") else 0.0
-    roll = bot.read_roll() if hasattr(bot, "read_roll") else 0.0
-    return {"yaw": yaw, "pitch": pitch, "roll": roll}
+    yaw = float(bot.read_yaw()) if hasattr(bot, "read_yaw") else 0.0
+    pitch = float(bot.read_pitch()) if hasattr(bot, "read_pitch") else 0.0
+    roll = float(bot.read_roll()) if hasattr(bot, "read_roll") else 0.0
+    euler = [math.radians(roll), math.radians(pitch), math.radians(yaw)]
+    return {"yaw": yaw, "pitch": pitch, "roll": roll, "euler": euler}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -408,8 +414,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/imu":
             try:
                 with dog_lock:
-                    angles = read_imu_angles()
-                self.respond({"ok": True, **angles})
+                    imu = read_imu_angles()
+                self.respond({"ok": True, **imu})
             except Exception as exc:
                 self.respond({"ok": False, "message": str(exc)}, status=500)
             return

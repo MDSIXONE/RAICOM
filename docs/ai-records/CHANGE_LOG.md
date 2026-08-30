@@ -1,5 +1,199 @@
 # 代码改动记录
 
+## 2026-08-17｜定位方案改造：Cartographer 2D 激光里程计 + IMU 桥（odom→base_link 替换 cmd_vel 积分）
+
+- 状态：改动完成（实机静态验证通过，运动验证待用户在场进行）
+- 目标：按用户与外部建议，用 Cartographer 2D（+IMU）替代"AMCL 位姿回灌/ cmd_vel
+  积分"作为 odom→base_link 激光里程计层；map→odom 暂留 lidar_loc。
+- 影响文件：`robot-src/host-services/oumax-xgo/manual_control_server.py`（新增
+  read_imu_angles 含 euler 字段，/imu 端点扩展 9 轴结构但回退单轴三连读——见下）；
+  新增 `robot-src/catkin_ws/src/robot_dog_navigation/scripts/imu_bridge.py`（轮询
+  /imu → 发布 sensor_msgs/Imu，orientation 用 euler、angular_velocity.z 用 yaw
+  差分、linear_acceleration 置零）；新增 `robot_dog_navigation/scripts/carto_odom.py`
+  （cartographer TF → /odom 消息桥，只发消息不发 TF）；`robot_dog_navigation/CMakeLists.txt`
+  （catkin_install_python 加入 imu_bridge.py/carto_odom.py）；`robot_dog_bringup/launch/
+  robot_dog_main.launch`（新增 odom_mode arg：cmd_vel/carto/amcl 三态互斥，carto 分支
+  含 cartographer_node(gflags args)+imu_bridge+carto_odom，use_amcl 保留向后兼容并
+  前移定义）；新增 `robot_dog_navigation/config/cartographer_2d.lua`（纯激光 2D SLAM，
+  use_imu_data=false）；本记录与 mistakes 记录。
+- 实施记录：①调查真机 IMU 链路：8765 manual 服务（oumax-manual-control.service，
+  与 raicom-original-main Conflicts）未运行；xgolib 1.0.3 提供 read_imu()（0x65
+  批量 9 轴）与 read_yaw/pitch/roll（0x66/67/68 单轴）。②抓原始帧验证：**0x65 在
+  M-7.0.0b8 固件返回固件版本串，read_imu() 不可用**；0x66/67/68 有效（yaw 为累积
+  角 -3847°~-4129°，pitch/roll 体角度）。固件无原始 accel/gyro 流 → IMU 桥
+  angular_velocity.z 用 yaw 差分、accel 置零；Cartographer 将配置
+  use_imu_data=false（纯激光 2D SLAM）。③部署：manual_control_server.py 已部署
+  真机并重启服务（8765 正常，/imu 返回 yaw/pitch/roll/euler）；imu_bridge.py 已
+  部署 ros_ws + 容器 catkin_make 通过（devel 空间 6 脚本齐全，发现真机 CMakeLists
+  为旧版缺 main_flow 声明，已同步仓库新版）。④Cartographer 安装：arm64 官方无
+  预编译包（snapshots + packages.ros.org 均无），改源码编译——本机下载
+  cartographer/cartographer_ros 1.0.0 tag 源码 → scp → docker cp 容器，依赖
+  （ceres/protobuf/lua5.3/glog/gflags/boost）apt 安装中，编译进行中。
+- 验证：/imu 端点 curl 返回有效姿态（yaw 累积角连续变化、pitch/roll 稳定）；
+  imu_bridge.py 本地 py_compile 通过；**Cartographer 编译与实机静态验证全部通过**：
+  ①cartographer 1.0.0 源码编译成功（-j2，本机下载 → scp → 容器，注释测试段避开
+  g++9 iterator_traits 错误，functions.cmake -std=c++11→14 满足 PCL1.10）；
+  cartographer_ros_msgs/cartographer_ros 编译安装（cartographer_rviz 删除，不需要）；
+  ②carto 模式 launch 节点集正确（cartographer_node+imu_bridge+carto_odom+lidar_loc，
+  无 simple_odom，use_amcl 兼容保留）；③实机静态启动（enable_motion:=false）：
+  cartographer 发布 odom→base_link TF（~10Hz 匹配更新）、carto_odom 发 /odom 30Hz、
+  imu_bridge 发 /imu 30Hz（yaw 差分角速度）、lidar_loc 发 map→odom（修正量趋 0）、
+  move_base 正常（costmap 已建，/move_base/status 发布）；④位姿稳定性：机器静止
+  40s，yaw 收敛 -2.93°±0.1°，位置 ±2cm 匹配噪声带内（可接受）。
+- 遗留风险：①实机运动验证未做（enable_motion:=true 需用户在场安全确认）：纯激光
+  （无 IMU、无编码器）在足式颠簸/快速转向时 yaw 估计鲁棒性、导航联调（move_base+
+  cym_planner 走点）效果待验证；②cartographer 静止时位置 ±2cm 匹配噪声，运动场景
+  是否被 motion_filter/匹配吸收待观察；③0x65 批量读若后续固件升级可用，可升级为
+  全 9 轴 IMU（服务端与 imu_bridge 已留字段扩展点）；④容器内编译产物（/usr/local
+  cartographer、catkin_ws 三个包）在容器重建后会丢失，需固化进镜像或重建后重跑
+  编译流程（本记录含完整步骤）；⑤机器重启后 oumax-manual-control 不自启（disabled），
+  需手动：停 raicom-original-main → 启 oumax-manual-control。
+
+## 2026-08-17｜实机导航改造：AMCL 全权定位替代 cmd_vel 积分 odom（foot 步态无编码器）
+
+- 状态：改动完成（实机验证未完成——机器断电）
+- 目标：主流程实机跑通后 waypoint 5 失败，排查确认 simple_odom（cmd_vel 积分）是
+  定位污染源；按用户判断改为"foot 步态无编码器、odom 不可信，比赛场景激光始终
+  可用，定位全权交给 AMCL"。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_navigation/scripts/odom_from_amcl.py`
+  （AMCL 位姿 EMA 平滑后直接作为 odom→base_link 与 /odom，替代 cmd_vel 积分）；
+  `robot_dog_navigation/scripts/simple_odom.py`（yaw_jump_limit 默认 0.4→1.5，修复
+  转向 delta 被丢弃）；`robot_dog_bringup/launch/robot_dog_main.launch`（simple_odom
+  加 `unless="$(arg use_amcl)"`，use_amcl group 新增 odom_from_amcl 节点）；本记录。
+- 实施记录（实机 192.168.137.157，用户在场）：
+  ①主流程实机全链路首跑：导航 1-4 点真到达（容器化链路验证通过），**waypoint 5
+  ABORTED**——move_base "Failed to find a valid control. Even after executing
+  recovery behaviors"（7s 即败，机器停在 (2.03,-0.19)，P5 目标 (1.30,-0.175)）。
+  ②球程序容器内真实运行验证通过：`ros-noetic-ball` 内编排→抓球程序完整拉起，
+  YOLO 推理循环运行（模型/相机/串口全链路 OK）。
+  ③odom 污染实锤：机器静止时 odom→base (4.88,2.49) yaw 134° vs 实际
+  (2.03,-0.19) yaw≈101°；日志 `imu yaw jump 0.43 rad dropped`（yaw_jump_limit=0.4
+  把 XGO 脉冲式转向当跳变丢弃，丢弃后 _last_raw=raw 永久抹掉该段航向 → 平移积分
+  方向错 → odom 路径分叉）；另有 8 次 imu fetch failed。
+  ④按用户决策实施 AMCL 全权定位：odom_from_amcl 订阅 /amcl_pose，EMA（α=0.4）+
+  静止死区（5mm/0.005rad）平滑，直接发布 odom→base（AMCL 的 map→odom 自动趋于
+  恒等）；首帧前用 init 位姿发 TF 打破"AMCL 等 laser→odom TF、odom 节点等
+  amcl_pose"的死锁（实机踩到并修复）。
+  ⑤新架构启动验证通过：AMCL 正常发布位姿、/odom 10Hz、map→odom 恒等 (0,0,0)。
+  ⑥单点测试（0.5m goal）执行中**机器断电**，实机验证中断。
+- 验证：新架构静态验证全部通过（amcl_pose 发布、odom 10Hz 跟随、TF 链完整、
+  map→odom 恒等）；实机运动验证（单点/主流程）未完成。
+- 遗留风险：①新架构核心风险——AMCL 运动模型输入变为自身输出的平滑值，机器运动时
+  粒子跟随性/定位延迟待实机验证（若跟不上需调 alpha/粒子参数）；②odom_from_amcl
+  的 twist 供局部规划器用，AMCL 修正跳变被 0.05m/0.1rad 阈值挡掉不计速度，实机
+  观察；③机器来电后按 08-16 总结 §4 顺序：restore_mode（本次已做过一次，若再次
+  F 测试需重做）→ 单点测试新 odom 架构 → 重跑主流程全链路；④simple_odom 的
+  yaw_jump_limit 修复只对非 AMCL 模式生效（未实机验证）。
+
+## 2026-08-17｜新建底层运动控制包 robot_dog_control：cmd_vel 桥自 robot_dog_teleop 迁入
+
+- 状态：改动完成
+- 目标：按用户要求补建 catkin 工作空间缺失的底层运动控制功能包，把 cmd_vel→OUMAX 手控
+  服务桥接节点 `oumax_cmd_vel_bridge`（含急停/看门狗/步态模式）从 robot_dog_teleop 迁入
+  新包 `robot_dog_control`，作为控制层统一承载地。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_control/`（scripts/oumax_cmd_vel_bridge.py
+  为 git mv 迁入、package.xml、CMakeLists.txt、README.md）；
+  `robot-src/catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`（桥启动
+  pkg 改 robot_dog_control 并加注释）；`robot_dog_teleop/README.md`（「真实控制桥接」节
+  补迁移说明）；`.agents/skills/project-index/INDEX.md`（新增「运动控制」行、更新时间）；
+  `docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：纯包归属迁移，节点行为零变化（节点名/话题/全部参数/HTTP 客户端原样，git mv
+  保留历史）；新包 package.xml 依赖 rospy/geometry_msgs/std_msgs（桥脚本实际 import）；
+  CMakeLists 把桥列入 catkin_install_python（旧包未列入，属补齐，install 空间也可用）；
+  启动入口不变，仍由 robot_dog_main.launch 统一启动。
+- 验证：py_compile 通过；launch XML ElementTree 解析通过；git status 确认 rename 记录、
+  teleop 包内无残留脚本；全仓 grep 确认唯一 pkg 启动引用已指向 robot_dog_control，其余
+  命中均为 docs 历史记录、simple_odom.py 与 move_base.yaml 注释（不改）。
+- 遗留风险：机器端 `/home/pi/ros_ws/src/` 副本需同步部署新包并在容器内 catkin_make 后
+  实机回归（launch 节点解析 + enable_motion:=true 实机运动场景）；迁移本身未实机验证。
+
+## 2026-08-17｜主流程全部容器化（实机）：球程序容器 ros-noetic-ball 落地 + 相机/串口全链打通
+
+- 状态：改动完成
+- 目标：按用户要求，主流程（导航 5 点 → 抓球放球）不再在宿主机跑程序，全部走容器。
+- 影响文件：`robot_dog_navigation/scripts/main_flow.py`（`--grab-release-ssh` 改为仅停服务，
+  球触发经 ssh `docker exec` 进球容器，新增 `--grab-release-container`/`--grab-release-runner`）；
+  新增 `robot_dog_navigation/host/run_main_flow_in_docker.sh`（宿主机一键入口）；
+  新增 `robot_dog_ball_grab/host/setup_ball_container.sh`（球容器创建/配置，幂等）与
+  `run_ball_in_container.sh`（球容器内运行入口）；重写 `run_ball_in_docker.sh`；
+  `robot_dog_navigation/README.md`、`robot_dog_ball_grab/README.md`、`docs/lingo.md`、
+  `.agents/skills/project-index/INDEX.md`、`docs/technical/2026-08-16-docker-runtime-unification.md`、
+  本记录。
+- 实施记录（机器实机 192.168.137.157，用户在场）：
+  ①**restore_mode 恢复腿模式**（08-16 遗留第一优先）：宿主机 xgovenv 执行成功
+  （`wheel control disabled; foot mode restored`），raicom-original-main 恢复 active。
+  ②**导航容器重建**：旧容器仅挂 ros_ws/ydlidar 且无 ttyAMA0 直通；`docker update`
+  不支持 --device-add → rename 旧容器兜底后按原配置重建，补 `-v /home/pi:/home/pi` 与
+  `--device /dev/ttyAMA0`。导航容器内 xgovenv 复用验证失败——**focal 与宿主机
+  Python 3.11 / libcamera 0.3 不兼容（硬性版本矛盾，方案文档 §3 已预警）**。
+  ③**球程序独立容器方案**：新容器 `ros-noetic-ball`（debian:bookworm-slim，与宿主机
+  同基线）——容器内自建 ballenv（pip 装 numpy==1.24.2、opencv-python==4.11.0.86、
+  onnxruntime==1.20.0，与宿主 xgovenv 对齐）+ `.pth` 兜底宿主 dist-packages 与
+  xgovenv site-packages（含 editable 的 uiutils src）+ `LD_LIBRARY_PATH` 兜底宿主
+  `/usr/lib/aarch64-linux-gnu` + 挂载 `/usr/lib/aarch64-linux-gnu/libcamera`（IPA）、
+  `/usr/share/libpisp`、`/usr/share/libcamera`（tuning）、`-v /dev:/dev`（全设备）+
+  `--privileged` + 容器内跑 **udevd**（libcamera 的 udev 枚举器依赖 /run/udev/data
+  数据库，缺之相机枚举为空且静默——最深的坑）+ `RPI_LGPIO_REVISION=00c041a0` 环境
+  变量绕过 rpi-lgpio 的 device-tree 检测 + 复制宿主 pinctrl 工具。
+  ④**全链验证 ALL_OK**：xgolib 串口固件识别（xgomini）、SPI 屏初始化、
+  cv2/numpy/onnxruntime import、**Picamera2 实拍 (480,640,3)** 全部通过。
+  ⑤球包/主流程脚本/球容器 host 脚本全部部署至机器 catkin_ws
+  （`/home/pi/ros_ws/src/...`，容器内 `/root/catkin_ws/src/...`），md5 校验一致、LF 干净。
+  ⑥机器端旧 `run_main_flow.sh` 传参与新语义兼容（`--grab-release-ssh pi@127.0.0.1`），
+  仅需重新部署 main_flow.py。
+- 验证：球容器全链验证脚本 ALL_OK；部署 6 文件 md5 与仓库一致；服务恢复
+  raicom-original-main/oumax-camera active；main_flow.py py_compile 通过。
+- 遗留风险：①主流程全链路（导航 5 点 → ssh 停服务 → docker exec 球容器抓球放球）
+  实机未跑，导航 launch 未启动（容器重建后需按 08-16 总结 §1 重建系统）；②球程序
+  实机动作（抓球/放球）未在容器内验证——相机/串口/依赖链已通，但视觉参数
+  （target_radius 等）在容器内的实际表现待实机跑球编排确认；③球容器内 GPIO.setmode
+  有 "No GPIO chips found"/"sudo: not found" 警告（uiutils 顶层 setmode 失败但被吞，
+  球程序不用 GPIO，暂不影响；如后续程序需 GPIO 按钮需再处理）；④setup 脚本幂等但
+  udevd 是容器内进程，容器重建后需重跑 setup（脚本已固化该步骤）。
+
+## 2026-08-16｜巡线（黑线）实机首跑：脚本部署 + 宿主机 xgovenv 运行 + 容器串口直通缺失发现
+
+- 状态：改动完成
+- 目标：把 `follow_line.py` 部署到机器并实机跑一遍黑线巡线。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line.py`（scp 部署，SHA-256 `0eae5b47…` 与仓库 `robot_dog_follow_line/scripts/follow_line.py` 一致）；`docs/lingo.md`（新增「巡线」词条）；`docs/ai-records/{CHANGE_LOG,MISTAKE_INDEX}.md`、`mistakes/2026-08-16.md`。
+- 实施记录：①机器离线（ping 不通）→ 用户开机后连通（9ms，SSH 免密可用）；②停 `raicom-original-main` + `oumax-camera` 释放串口/相机；③**发现容器 `ros-noetic` 未直通 `/dev/ttyAMA0`**（`docker inspect` 仅 ydlidar/video0 直通），与 `docs/technical/2026-08-16-docker-runtime-unification.md` 声称的"设备直通 /dev/ttyAMA0"不符 → 不改容器（导航还在用），改用宿主机 `/home/pi/RaspberryPi-CM5/xgovenv/bin/python` 直接运行（pi 在 dialout 组，串口/相机权限够）；④nohup 后台运行：相机初始化成功、固件识别 xgomini，进入 tracking 巡线——初始转向角 70.7 大幅纠偏 → 持续转向角 8.0（PID 饱和边界）微调；⑤用户叫停：首次 `pkill -f` 匹配远程 shell 自身导致命令中断（python 进程实际已杀），二次确认后恢复两服务 active。
+- 验证：运行期间日志持续输出 PID 转向/前进决策；停止后 pgrep 无 python 巡线进程；`raicom-original-main`/`oumax-camera` 恢复 active。实机结果：**未正常巡线、乱走**（用户现场确认，全程转向角 ≥8 饱和、未见直行段）。
+- 遗留风险：容器缺 `/dev/ttyAMA0` 直通，README/方案文档与实机不符——容器内跑厂商程序需 docker update/重建容器补串口，或继续宿主机 xgovenv 直跑；巡线乱走待现场调参（HSV 掩码/黑线宽度/PID 或转向速度映射，原厂默认参数未标定）；**巡线启动改由用户手动执行，AI 不再自动启动**（lingo 词条已注明）。
+
+## 2026-08-16｜厂商示例全部入库 + 运行环境统一容器化方案
+
+- 状态：改动完成
+- 目标：把其余厂商示例程序也写入 ROS 功能包；统一运行环境为 ros-noetic Docker 容器（消除宿主机/容器割裂），抓球程序一并容器化。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_demos/`（Mini3W_W 12 个顶层脚本 + common 13 个 + follow_person/speech/face_classification 子目录，61 个内容文件、零代码改动、SHA-256 全量一致）；新增 `robot_dog_demos/host/run_demo_in_docker.sh` 与 `robot_dog_ball_grab/host/run_ball_in_docker.sh`（容器内 xgovenv 运行封装）；`docs/technical/2026-08-16-docker-runtime-unification.md`（方案文档）；`robot_dog_ball_grab/README.md`、`robot_dog_follow_line/README.md`、`robot_dog_demos/README.md`（运行方式改为容器化说明）；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：①demos 包参照 robot_dog_follow_line 结构，来源 `archive/full-device-source/home-pi/RaspberryPi-CM5/`（Mini3W_W/demos 与 common/demos），剔除 follow_line.py（独立包）、YDLidar-SDK（robot_dog_lidar 使用）、xiaozhi_test 与云服务子项目（mcp_server/realtime_dialog/WIFI/AI_gym/sample/src）；56 个 py 仅 3 个带 shebang 且均合法，零调整。②容器化方案：容器挂载 `/home/pi`（厂商 xgovenv 同路径复用）+ 设备直通 `/dev/ttyAMA0`、`/dev/video0`，主流程 `--grab-release-ssh` 跳板改为容器内直接执行（待实机）；备选 pip 方案因 picamera2 在 Focal 无 wheel 不推荐。③两个 host 封装脚本按 robot_dog_teleop/host/launch_*.sh 风格（docker exec + 可选 --release-camera-serial 停 oumax-camera/oumax-manual）。
+- 验证：demos 包 56 个 py 全部 py_compile 通过、package.xml XML 解析通过、入库后凭据扫描零命中、61 个文件与 archive 源逐文件 SHA-256 一致；两个 host 脚本 bash -n 语法检查通过（见下方验证补充）；README 更新为容器化说明。
+- 遗留风险：机器离线，容器挂载/设备直通与"容器内运行厂商程序"均未实机验证（方案文档 §2.3 列出检查清单，§4 列出实施步骤）；picamera2/xgolib 依赖的 /dev/video0、/dev/ttyAMA0 直通需重建或 docker update 容器；xgoscreen SPI 屏在容器内可能不可用，部分示例显示功能需评估；主流程抓球触发方式（ssh 跳板 → 容器内直接执行）待实机改造。
+
+## 2026-08-16｜厂商巡线示例纳入 ROS 功能包：新增 robot_dog_follow_line
+
+- 状态：改动完成
+- 目标：把厂商巡线示例 follow_line.py 写入 catkin 功能包，作为巡线任务代码存放处。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_follow_line/`（scripts/follow_line.py、CMakeLists.txt、package.xml、README.md）；`docs/ai-records/CHANGE_LOG.md`。
+- 实施记录：包结构参照 robot_dog_ball_grab（scripts + catkin_install_python，脚本非 ROS 节点、机器端宿主机直接运行）。脚本取自 `archive/full-device-source/home-pi/RaspberryPi-CM5/robots/Mini3W_W/demos/follow_line.py`（与 Dog_LM 版 SHA-256 一致，28A134C8…）；仅做最小调整：shebang 从第 6 行移到首行并改为 `#!/usr/bin/env python3`（原文件 shebang 在 docstring 之后无效），其余代码零改动。README 记录运行环境（机器端 xgovenv，含 uiutils/xgolib/picamera2/xgoscreen，系统 Python 不可用）、行为要点（HSV 黑掩码 [0,0,0]-[180,255,30]、最大轮廓、PID(P=50,D=30)、|z_pid|<8 直行 move_x(18)、≥8 转向、未检测到线停止、固件首字符识别 xgolite/xgomini、A/C/D 按钮切状态、B 退出）、部署运行与停服务注意事项。
+- 验证：python py_compile 通过；package.xml XML 解析通过；逐行对比确认除 shebang 外与厂商原版一致（去除 shebang 行后 Compare-Object 无差异）。
+- 遗留风险：脚本依赖机器端专有运行时与硬件（Picamera2/XGO 串口），本地不可运行；掩码范围需按实机光照调节；尚未部署到机器（机器当时离线）。
+
+- 状态：进行中
+- 目标：实机跑通主流程全链路（导航 5 点 + 抓球放球）。
+- 影响文件：`docs/technical/2026-08-16-main-flow-debug.md`（完整调试总结：时间线/根因/标定数据/遗留事项）；`CHANGE_LOG.md`。
+- 实施记录：详见总结文档。核心进展：①桥 x 步长死区修复后导航 5 点真走通（缩点路径）；②CRLF 污染修复（simple_odom shebang）；③AMCL 静止漂移修复（过滤半径 0.45→0.25）；④odom_scale 标定 0.23（轮足打滑 ±20% 物理限制，靠视觉闭环兜底）；⑤发现 XGO mini3W 轮足打滑导致位移不可重复；wheel 模式不可用、锁轮（128）+move_x 可用但不显著改善重复性；⑥⚠️ F 测试后狗留在 wheel 模式未恢复，主流程 move_x 失效原地转圈——`restore_mode.py` 已写好待机器来电执行。
+- 验证：导航 5 点跑通（odom_scale 修正后）；单点 1.0m goal 多次实测 85~146cm（打滑离散）；AMCL 静止稳定 (0,0,0)。
+- 遗留风险：机器断电充电中；来电后按总结文档 §4 顺序执行（恢复模式 → 跑主流程 → 补地图 → DWA 对比可选）；手控服务卡死原因未查。
+
+## 2026-08-16｜CRLF 修复 + 系统重建：simple_odom/AMCL/move_base 全链路恢复
+
+- 状态：改动完成
+- 目标：排查主流程实机调试中 simple_odom 在 roslaunch 里启动即死（exit 127）、TF 缺 odom→base_link 导致 AMCL 不发 map TF、move_base 卡"Timed out waiting for transform"。
+- 影响文件：`robot-src/catkin_ws/src/robot_dog_navigation/scripts/simple_odom.py`（新增 odom_scale 标定参数，位移乘标定系数；修复部署版 CRLF 行尾）；`main_flow.py`（部署版 CRLF 修复）；机器端容器内 sed 转 LF + launch 重启；`docs/ai-records/mistakes/2026-08-16.md`、`MISTAKE_INDEX.md`、`CHANGE_LOG.md`。
+- 实施记录：simple_odom 手动 `python3` 显式调用正常、roslaunch 直接执行（shebang）崩溃——根因是 Windows 端 scp 部署的脚本带 CRLF，shebang 变 `python3\r`（exit 127，掩盖于手动调用）。期间还处理了：整机重启后的系统重建流程（acquire → roscore → launch，docker exec -d 方式）、pkill -f 匹配自身、手控服务未恢复导致桥 refused、雷达 /dev/ydlidar 设备节点需容器重启重挂等。修复后 rosnode 全 12 节点（含 simple_odom）、TF map→base_link (0,0,0)、AMCL 发布位姿正常。
+- 验证：rosnode list 含 /simple_odom；tf_echo map base_link = (0,0,0)；/scan 10Hz、/scan_filtered 10Hz；amcl_pose 有输出。
+- 遗留风险：odom_scale 尚未标定（默认 1.0）——主流程"移动距离太短"问题待标定实验（发 1.0m goal 量实际距离 → scale=实际/1.0 → 写入 launch）；主流程右侧路径仍按已知区收缩（0.5,0.25,-0.575），地图右下角待补扫。
+
 ## 2026-08-15｜主流程实机首跑：只转不走，桥 x 步长死区修复（进行中）
 
 - 状态：进行中

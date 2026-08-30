@@ -14,7 +14,8 @@
 | 低趴 | 已确认的完整抓取准备姿态：车体低趴、后肢抬高与机械臂到位 | [#低趴](#低趴) |
 | 放球 | 抓球的逆操作：低趴后机械臂安全伸出（爪保持闭合持球）、张爪让球落下、再安全收臂 | [#机械臂关节](#机械臂关节) |
 | 抓完掉头放球 / 旋转180度 | 一键编排 `ball_grab_release.py`：抓球程序 → rotate.py 旋转 180° → 放球程序 | [#抓完掉头放球](#抓完掉头放球) |
-| 主流程 / 跑主流程 | 上电后全自动：定点巡航 5 点 → 抓球放球（`main_flow.py --enable-motion`） | [#主流程](#主流程) |
+| 主流程 / 跑主流程 | 上电后全自动：定点巡航 5 点 → 抓球放球（导航与球编排全部容器内 catkin 执行） | [#主流程](#主流程) |
+| 巡线 / 跑巡线 / 巡线（黑线） | 实机黑线跟随：厂商 `follow_line.py`（HSV 黑线 + PID），**启动由用户手动执行** | [#巡线](#巡线) |
 | 放 catkin / 代码存放地 | 本次比赛任务代码统一写入 `robot-src/catkin_ws/src/`（原厂程序不删、不入 catkin） | [#放-catkin](#放-catkin) |
 
 ## 机器IP
@@ -144,10 +145,16 @@
      （`robot_dog_*` 命名，标准 package.xml + CMakeLists.txt + README.md）。
   2. 原厂程序（如 `robot-src/host-services/oumax-xgo/` 下的脚本）保留不动，
      catkin 里放归档副本并在 README 注明两处副本的同步关系。
-  3. 同步更新项目索引（`.agents/skills/project-index/INDEX.md`）与 AI 工作记录。
-- **不是**：不是把原厂程序从 host-services 删除；不是部署到机器（catkin 只是仓库内
-  代码组织，机器部署路径仍按各自文档，如 `/home/pi/oumax-xgo/`）。
-- **权威来源**：2026-08-14 用户指令确认；落地样例 `robot-src/catkin_ws/src/robot_dog_ball_grab/`。
+  3. 厂商示例统一入 `robot_dog_demos` 包（零代码改动副本，剔除
+     follow_line/YDLidar-SDK/xiaozhi_test/云服务子项目）。
+  4. 运行形态统一：程序在机器端 `ros-noetic` Docker 容器内运行（容器挂载
+     `/home/pi` + 设备直通，详见 `docs/technical/2026-08-16-docker-runtime-unification.md`），
+     不再宿主机/容器割裂；容器运行用各包 `host/run_*_in_docker.sh` 封装。
+  5. 同步更新项目索引（`.agents/skills/project-index/INDEX.md`）与 AI 工作记录。
+- **不是**：不是把原厂程序从 host-services 删除；不是只在宿主机部署（机器部署路径仍按
+  各自文档，如 `/home/pi/oumax-xgo/`，但执行统一走容器）。
+- **权威来源**：2026-08-14 用户指令确认 + 2026-08-16 容器化统一约定；落地样例
+  `robot-src/catkin_ws/src/robot_dog_ball_grab/`、`robot_dog_demos/`。
 
 ## 抓完掉头放球
 
@@ -170,14 +177,19 @@
   以当前位姿为起点，依次定点 5 个点（前方 2.3 m 右转 90° → 右方 0.5 m → 右方
   1.65 m → 左方 0.575 m 回撤，朝向 180° → 前进 1 m 朝向与第一点相同），全部
   到达后运行抓球放球一键编排 `ball_grab_release.py`（抓球 → 掉头 180° → 放球）。
+  导航在容器 `ros-noetic` 内、球编排在球容器 `ros-noetic-ball` 内执行 catkin 包
+  程序，**不再使用宿主机程序**（2026-08-17 起；ssh 仅用于停服务与 docker exec 编排）。
 - **前置条件**：`robot_dog_main.launch` 已用 AMCL 定点模式启动（`use_amcl:=true
   map_file:=ricam_arena_mapped.yaml init_x:=0.0 init_y:=0.0 init_yaw:=0.0`），
-  机器在出发区与地图原点对齐摆放；主流程脚本与四个球脚本同目录部署
-  （机器端 `/home/pi/oumax-xgo/`）。
-- **精确动作**：机器终端执行 `bash /home/pi/run_main_flow.sh`（一键：容器内跑
-  导航 5 点 → ssh 本机停 oumax-manual 释放串口 → xgovenv python 跑
-  `ball_grab_release.py --enable-motion`）。不带 `--enable-motion` 时只导航不
-  抓球（与球编排门禁一致）。路径距离/角度全部参数化
+  机器在出发区与地图原点对齐摆放；球容器 `ros-noetic-ball` 已由
+  `robot_dog_ball_grab/host/setup_ball_container.sh` 配置（ballenv + udevd + 设备挂载）；
+  主流程脚本与球编排部署于机器 catkin_ws（`/home/pi/ros_ws/src/`，容器内
+  `/root/catkin_ws/src/`）；容器→宿主机 ssh 免密。
+- **精确动作**：机器终端执行 `bash /home/pi/run_main_flow.sh` 或仓库版
+  `robot_dog_navigation/host/run_main_flow_in_docker.sh`（一键：导航容器内跑导航 5 点
+  → ssh 本机停 oumax-camera+oumax-manual 释放相机/串口 → ssh 本机 `docker exec
+  ros-noetic-ball run_ball_in_container.sh --enable-motion` 跑球编排）。不带
+  `--enable-motion` 时只导航不抓球（与球编排门禁一致）。路径距离/角度全部参数化
   （`--forward-m`/`--side-distances`/`--final-forward-m`/`--turn-deg`），
   实机标定时方向反了把对应参数取负。
 - **不是**：不是只跑定点（单点用 RViz 2D Nav Goal 或直接发 goal）；不是让
@@ -185,6 +197,20 @@
   当前按地图已知区临时收缩为 `0.5,0.25,-0.575`，补扫地图右下角后恢复
   `0.5,1.65,-0.575`。
 - **权威来源**：`robot-src/catkin_ws/src/robot_dog_navigation/scripts/main_flow.py`。
+
+## 巡线
+
+- **等价说法**：跑巡线、巡线（黑线）、黑线跟随、跑一遍巡线
+- **含义**：在机器上运行厂商巡线程序 `follow_line.py`（`robot_dog_follow_line` 包，原厂示例零改动）：Picamera2 视觉 HSV 黑掩码（[0,0,0]-[180,255,30]，画面上半部分清空）提取黑线 → 最大轮廓圆心横坐标作偏差 → PID（P=50、D=30）控制，|z_pid|<8 直行 move_x(18)、≥8 转向+前进、未检测到线停止；启动即进入 tracking 巡线状态（板载按钮 A 巡线 / C color / D init，B 退出）。
+- **前置条件**：机器已开机连 WiFi（192.168.137.157）；场地铺好黑线；已停 `raicom-original-main.service`（占串口）与 `oumax-camera.service`（占相机）；脚本已部署 `/home/pi/oumax-xgo/follow_line.py`。
+- **精确动作**（**启动由用户手动执行，AI 不得自动启动巡线**）：
+  1. AI 只做：部署脚本（scp 至 `/home/pi/oumax-xgo/`）、确认服务已停、跑完确认进程清理与服务恢复、分析日志。
+  2. 用户手动启动（宿主机 xgovenv 直跑；容器 `ros-noetic` 未直通 ttyAMA0 不可用）：
+     `/home/pi/RaspberryPi-CM5/xgovenv/bin/python /home/pi/oumax-xgo/follow_line.py`
+  3. 观察日志：相机初始化成功 + 转向角/运动决策输出即正常；乱走/异常时 Ctrl-C 或 `kill <pid>` 停止。
+  4. 停止后恢复：`sudo systemctl start raicom-original-main.service oumax-camera.service`。
+- **不是**：不是导航定点巡航（主流程）；不是抓球放球；HSV 掩码与 PID 阈值是原厂默认未标定；2026-08-16 实机首跑**乱走**（全程转向角 ≥8 饱和、未见直行段），需现场调参后再用。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/README.md`、2026-08-16 实机首跑记录（`docs/ai-records/CHANGE_LOG.md`）。
 
 ## 抓取准备姿态下的球像素基准
 

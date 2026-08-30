@@ -67,6 +67,10 @@ roslaunch robot_dog_teleop physical_keyboard_teleop.launch enable_motion:=true
 机器实体急停或断电，并只进行一次短脉冲。禁止同时启动其他手柄、APP、raw-XGO 或串口
 控制程序；`oumax-manual.service` 是唯一允许持有串口的程序。
 
+导航栈使用的 `oumax_cmd_vel_bridge.py`（cmd_vel → 手控服务桥）已于 2026-08-17 迁至
+底层运动控制包 `robot_dog_control`，启动入口不变（仍由 robot_dog_bringup 的
+robot_dog_main.launch 启动）。
+
 ## 自动切换原厂程序（部署后使用）
 
 `host/` 内包含宿主机脚本，解决原厂 `common/main.py` 与 OUMAX 手控服务不能同时占用

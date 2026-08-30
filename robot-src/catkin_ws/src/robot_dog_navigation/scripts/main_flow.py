@@ -9,8 +9,9 @@
      P3  右方再 1.65 m（累计 2.15 m），朝向 180°
      P4  左方 0.575 m（自 P3 回撤，累计右方 1.575 m），朝向 180°
      P5  沿 P4 朝向前进 1 m（--final-forward-m），朝向与 P1 相同（右转 90°）
-2. 全部到达后运行抓球放球程序 ball_grab_release.py（抓球 → 掉头 180° → 放球），
-   --enable-motion 门禁透传。
+2. 全部到达后经球容器 ros-noetic-ball 运行抓球放球程序 ball_grab_release.py
+   （抓球 → 掉头 180° → 放球，catkin 包 robot_dog_ball_grab 脚本，
+   --enable-motion 门禁透传）。
 
 坐标系约定：相对路径以起点为原点、初始朝向为 0 基准；x = 前方、y = 左方、
 yaw 逆时针为正。因此"右转 90°" = yaw -π/2，"右方" = -y 方向，"朝向 180°" = yaw π。
@@ -18,11 +19,15 @@ yaw 逆时针为正。因此"右转 90°" = yaw -π/2，"右方" = -y 方向，"
 上电摆放起点与地图原点对齐（实机验证参数 use_amcl:=true init_x:=0 init_y:=0
 init_yaw:=0），路径方向均与初始朝向解耦。
 
-运行方式（机器端 ROS 容器内，ROS master 指向控制 PC）：
-    rosrun robot_dog_navigation main_flow.py --enable-motion
+运行方式（机器端 ROS 容器内，ROS master 在机器本机 127.0.0.1；推荐经宿主机一键脚本
+robot_dog_navigation/host/run_main_flow_in_docker.sh，或容器内直接执行）：
+    rosrun robot_dog_navigation main_flow.py --enable-motion --grab-release-ssh pi@127.0.0.1
 或直接：
     python3 main_flow.py --enable-motion
-（不带 --enable-motion 时 move_base 照常导航，但最后的抓球放球程序不运动；
+（--grab-release-ssh 模式：导航完成后经 ssh 停 oumax-camera/oumax-manual 释放相机与
+ 串口，再经 ssh 在宿主机 docker exec 进球容器 ros-noetic-ball（--grab-release-container）
+ 运行 catkin 包 robot_dog_ball_grab 的球编排（容器内入口 --grab-release-runner）。
+ 不带 --enable-motion 时 move_base 照常导航，但最后的抓球放球程序不运动；
  路径参数 --forward-m / --side-distances / --final-forward-m / --turn-deg
  可在实机标定时调整，例如方向相反时把 --side-distances 取负。）
 """
@@ -175,26 +180,45 @@ class MainFlow:
             self.wait_for_goal(index, x_m, y_m, yaw)
             rospy.loginfo("Reached waypoint %d/%d", index, total)
 
+    def default_grab_release_script(self):
+        """同工作区 catkin 包 robot_dog_ball_grab 的球编排脚本路径。"""
+        here = os.path.dirname(os.path.abspath(__file__))
+        ws_src = os.path.dirname(os.path.dirname(here))
+        return os.path.join(
+            ws_src, "robot_dog_ball_grab", "scripts", "ball_grab_release.py"
+        )
+
     def run_grab_release(self):
         if self.args.grab_release_ssh:
             host = self.args.grab_release_ssh
-            rospy.loginfo("Stopping oumax-manual on %s to release serial", host)
-            subprocess.run(
-                ["ssh", host, "sudo systemctl stop oumax-manual.service"], check=True
+            rospy.loginfo(
+                "Stopping oumax-camera + oumax-manual on %s (release camera & serial)",
+                host,
             )
-            python = self.args.grab_release_python
-            command = "cd /home/pi/oumax-xgo && {} ball_grab_release.py".format(python)
+            subprocess.run(
+                [
+                    "ssh",
+                    host,
+                    "sudo systemctl stop oumax-camera.service "
+                    "&& sudo systemctl stop oumax-manual.service",
+                ],
+                check=True,
+            )
+            rospy.loginfo("Services stopped; running grab-and-release in ball container")
+            command = "docker exec {0} {1}".format(
+                self.args.grab_release_container, self.args.grab_release_runner
+            )
             if self.args.enable_motion:
                 command += " --enable-motion"
-            rospy.loginfo("Running grab-and-release on %s: %s", host, command)
+            rospy.loginfo("Running grab-and-release via %s: %s", host, command)
             subprocess.run(["ssh", host, command], check=True)
             rospy.loginfo("action=grabrelease-complete")
             return
-        here = os.path.dirname(os.path.abspath(__file__))
-        script = self.args.grab_release_script or os.path.join(
-            here, "ball_grab_release.py"
-        )
-        command = [sys.executable, script]
+        python = self.args.grab_release_python
+        if python is None:
+            python = sys.executable
+        script = self.args.grab_release_script or self.default_grab_release_script()
+        command = [python, script]
         if self.args.enable_motion:
             command.append("--enable-motion")
         rospy.loginfo("Running grab-and-release: %s", " ".join(command))
@@ -240,19 +264,25 @@ def parse_args():
     parser.add_argument("--server-timeout-sec", type=float, default=20.0)
     parser.add_argument(
         "--grab-release-script",
-        help="抓球放球编排脚本路径（默认与本脚本同目录的 ball_grab_release.py；"
-        "仅本机执行模式使用）",
+        help="抓球放球编排脚本路径（默认同工作区 catkin 包 robot_dog_ball_grab/scripts/ball_grab_release.py）",
     )
     parser.add_argument(
         "--grab-release-ssh",
-        help="球程序远程执行主机（如 pi@192.168.137.157）：提供后导航完成时经 ssh "
-        "在该机执行抓球放球（先停 oumax-manual.service 释放串口，再用 "
-        "--grab-release-python 跑 /home/pi/oumax-xgo/ball_grab_release.py）",
+        help="球程序运行前需停服务的宿主机（如 pi@127.0.0.1）：导航完成后经 ssh 在该机停 oumax-camera/oumax-manual 服务（释放相机与串口），再经 ssh 在该机 docker exec 进 --grab-release-container 容器执行球编排",
+    )
+    parser.add_argument(
+        "--grab-release-container",
+        default="ros-noetic-ball",
+        help="球编排所在的 Docker 容器名（--grab-release-ssh 模式：导航完成后在该容器内执行）",
+    )
+    parser.add_argument(
+        "--grab-release-runner",
+        default="/root/catkin_ws/src/robot_dog_ball_grab/host/run_ball_in_container.sh",
+        help="球容器内的运行入口脚本（docker exec 直接执行，参数透传）",
     )
     parser.add_argument(
         "--grab-release-python",
-        default="/home/pi/RaspberryPi-CM5/xgovenv/bin/python",
-        help="远程抓球放球使用的机器端 python（默认机器端 xgovenv）",
+        help="球编排解释器（仅本机模式使用；默认当前 python）",
     )
     parser.add_argument(
         "--enable-motion",

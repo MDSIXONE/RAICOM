@@ -28,9 +28,20 @@ class SimpleOdom:
         self.child_frame_id = rospy.get_param("~child_frame_id", "base_link")
         self.imu_url = rospy.get_param("~imu_url", "http://127.0.0.1:8765/imu")
         self.rate = rospy.Rate(rospy.get_param("~rate", 10.0))
-        self.yaw_jump_limit = rospy.get_param("~yaw_jump_limit", 0.4)
+        # IMU 单帧跳变过滤。注意阈值不能太小：XGO 转向是脉冲式（cmd_vel 桥把
+        # wz 映射为 turn 步长突发），单帧（10Hz）IMU 变化可能达到数十度；0.4 rad
+        # 会把真实转向当作跳变丢弃，且丢弃后以新 raw 为基准，该段航向被永久
+        # 抹掉 → odom 朝向系统性落后 → 平移积分方向错误 → odom 路径漂移
+        # （2026-08-17 实机：odom (4.88,2.49) vs 实际 (2.03,-0.19)）。
+        # 1.5 rad 只过滤 ±π 环绕之外的真正异常跳变（±π 环绕已在上方处理）。
+        self.yaw_jump_limit = rospy.get_param("~yaw_jump_limit", 1.5)
         self.vx_eps = rospy.get_param("~vx_eps", 0.01)
         self.d_max = rospy.get_param("~d_max", 0.10)
+        # 位移标定系数：cmd_vel 的 vx（m/s）经 oumax_cmd_vel_bridge 转成 XGO
+        # 步长是非线性映射，实际速度 ≠ cmd_vel 值。odom 按 cmd_vel 积分会虚高，
+        # 使 move_base 提前判定到达（实机"移动距离太短"）。标定方法：发已知
+        # 距离 goal，量狗实际位移，scale = 实际/名义；实测后写入 launch。
+        self.odom_scale = rospy.get_param("~odom_scale", 1.0)
         # Stale /cmd_vel must decay to zero: the last Twist would otherwise
         # keep integrating forever after the publisher stops (e.g. a test
         # rostopic pub), making odom drift kilometres while the robot stands
@@ -124,8 +135,8 @@ class SimpleOdom:
 
         vx = 0.0 if abs(vx) < self.vx_eps else vx
 
-        dx = vx * math.cos(heading) * dt
-        dy = vx * math.sin(heading) * dt
+        dx = vx * math.cos(heading) * dt * self.odom_scale
+        dy = vx * math.sin(heading) * dt * self.odom_scale
         # Per-frame displacement clamp: 0.10 m @ 10 Hz == 1.0 m/s ceiling.
         # Tune up if the foot gait moves faster than that; too low silently
         # drops real motion (rviz robot stays put while the robot walks).

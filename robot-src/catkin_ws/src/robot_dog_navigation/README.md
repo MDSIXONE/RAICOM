@@ -70,10 +70,10 @@ bash wsl-simulation/start_robot_rviz.sh
 距离参数（`--side-distances`，逗号分隔，正值=右方、负值=左方）均为实测标定值，
 实机验证时可按场地调整；若某段方向相反，把对应参数取负即可。
 
-运行（机器端 ROS 容器内，ROS master 指向控制 PC）：
+运行（机器端 ROS 容器内，ROS master 在机器本机 127.0.0.1）：
 
 ```bash
-rosrun robot_dog_navigation main_flow.py --enable-motion
+rosrun robot_dog_navigation main_flow.py --enable-motion --grab-release-ssh pi@127.0.0.1
 ```
 
 - 前置：`robot_dog_main.launch` 已用 AMCL 定点模式启动（`use_amcl:=true
@@ -85,20 +85,28 @@ rosrun robot_dog_navigation main_flow.py --enable-motion
   `global_planner/GlobalPlanner`。
 - 不带 `--enable-motion` 时 move_base 照常导航，但最后的抓球放球程序不运动
   （与 `ball_grab_release.py` 的门禁一致）。
-- 抓球放球脚本默认按本脚本同目录解析（机器端部署形态
-  `/home/pi/oumax-xgo/`），也可用 `--grab-release-script` 显式指定。
+- 抓球放球编排默认解析同工作区 catkin 包
+  `robot_dog_ball_grab/scripts/ball_grab_release.py`，也可用
+  `--grab-release-script` 显式指定。
 
-**机器端一键执行（推荐，master 跑在机器上）**：导航在容器内执行（ROS 全走
-本机 127.0.0.1），导航完成后经 ssh 到宿主机释放串口并运行抓球放球编排：
+**机器端一键执行（推荐，master 跑在机器上）**：导航在容器 `ros-noetic` 内、
+球编排在球容器 `ros-noetic-ball` 内执行（程序均不走宿主机）；导航完成后经 ssh
+到宿主机停 `oumax-camera`/`oumax-manual` 释放相机与串口，再经 ssh 在宿主机
+`docker exec` 进球容器运行 catkin 包球编排。仓库提供等价一键脚本：
 
 ```bash
 # 机器终端（或 ssh）：
+bash robot-src/catkin_ws/src/robot_dog_navigation/host/run_main_flow_in_docker.sh
+# 或机器端既有脚本（重新部署 main_flow.py 后行为一致）：
 bash /home/pi/run_main_flow.sh
 ```
 
-`run_main_flow.sh` 调用的参数：`--enable-motion --grab-release-ssh
-pi@127.0.0.1 --side-distances 0.5,0.25,-0.575`（右侧距离已按实机地图已知区
-y≥-0.75 临时收缩；地图补扫右下角后恢复 `0.5,1.65,-0.575`）。`--grab-release-ssh`
-模式会先 `ssh <host> sudo systemctl stop oumax-manual.service` 释放串口，
-再用机器端 xgovenv python 跑 `/home/pi/oumax-xgo/ball_grab_release.py`
-（`--grab-release-python` 可改，默认 `/home/pi/RaspberryPi-CM5/xgovenv/bin/python`）。
+一键脚本调用的参数：`--enable-motion --grab-release-ssh pi@127.0.0.1
+--side-distances 0.5,0.25,-0.575`（右侧距离已按实机地图已知区 y≥-0.75 临时收缩；
+地图补扫右下角后恢复 `0.5,1.65,-0.575`）。`--grab-release-ssh` 模式会先
+`ssh <host> sudo systemctl stop oumax-camera.service oumax-manual.service` 释放相机
+与串口，再 `ssh <host> docker exec ros-noetic-ball
+/root/catkin_ws/src/robot_dog_ball_grab/host/run_ball_in_container.sh --enable-motion`
+在球容器内跑球编排（容器名/入口可用 `--grab-release-container`/
+`--grab-release-runner` 覆盖；球容器环境由
+`robot_dog_ball_grab/host/setup_ball_container.sh` 配置，详见该包 README）。
