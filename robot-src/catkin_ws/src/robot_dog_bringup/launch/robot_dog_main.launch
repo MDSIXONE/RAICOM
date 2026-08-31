@@ -12,6 +12,17 @@
        mapping mode pass init_x:=0.0 init_y:=0.0 so odom starts at the
        robot's physical position. -->
   <arg name="enable_mapping" default="false"/>
+  <!-- 里程计/定位模式选择（须在下方 gmapping 分支前定义，launch arg 顺序敏感）：
+       odom_mode=cmd_vel（默认）：cmd_vel 积分 odom（foot 步态无编码器、打滑
+       不可信，仅兜底）；odom_mode=amcl：AMCL 位姿平滑回灌 odom（odom_from_amcl）；
+       odom_mode=carto：Cartographer 2D 纯激光 SLAM 作激光里程计发
+       odom -> base_link（use_imu_data=false，M-7.0.0b8 固件无原始 accel/gyro），
+       imu_bridge 发布 /imu（yaw 差分角速度，供 yaw 消费方与未来升级用）；
+       建图模式 enable_mapping:=true 时：odom_mode=cmd_vel → gmapping 建图，
+       odom_mode=carto → Cartographer 纯激光建图。 -->
+  <arg name="odom_mode" default="cmd_vel"/>
+  <!-- 历史参数：use_amcl:=true 等价于 odom_mode:=amcl，保留向后兼容 -->
+  <arg name="use_amcl" default="false"/>
   <!-- Odom origin: mapping starts at the robot's physical position (0,0);
        navigation mode reuses the arena pose used in offline sim. -->
   <arg name="init_x" default="-0.70"/>
@@ -29,7 +40,10 @@
     <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_file)" output="screen"/>
   </group>
 
-  <group if="$(arg enable_mapping)">
+  <!-- 建图器选择：odom_mode=cmd_vel（默认）→ gmapping 传统建图；
+       odom_mode=carto → Cartographer 纯激光建图（本 gmapping 分支排除，
+       carto 分支在下方独立 group，建图/定位两用）。 -->
+  <group if="$(eval arg('enable_mapping') and arg('odom_mode') != 'carto')">
     <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
       <remap from="scan" to="/scan_filtered"/>
       <param name="base_frame" value="base_link"/>
@@ -60,14 +74,8 @@
        map -> odom TF is published by lidar_loc below; in mapping mode
        slam_gmapping publishes it, so no static map_to_odom exists here
        (a static publisher would fight whichever node owns that transform).
-       odom_mode=cmd_vel（默认）：cmd_vel 积分 odom（foot 步态无编码器、打滑
-       不可信，仅兜底）；odom_mode=amcl：AMCL 位姿平滑回灌 odom（odom_from_amcl）；
-       odom_mode=carto：Cartographer 2D 纯激光 SLAM 作激光里程计发
-       odom -> base_link（use_imu_data=false，M-7.0.0b8 固件无原始 accel/gyro），
-       imu_bridge 发布 /imu（yaw 差分角速度，供 yaw 消费方与未来升级用）。 -->
-  <arg name="odom_mode" default="cmd_vel"/>
-  <!-- 历史参数：use_amcl:=true 等价于 odom_mode:=amcl，保留向后兼容 -->
-  <arg name="use_amcl" default="false"/>
+       （use_imu_data=false，M-7.0.0b8 固件无原始 accel/gyro），详见上方 odom_mode
+       arg 定义。 -->
   <node pkg="robot_dog_navigation" type="simple_odom.py"
         name="simple_odom" output="screen"
         unless="$(eval arg('use_amcl') or arg('odom_mode') != 'cmd_vel')">
@@ -180,31 +188,6 @@
         <param name="yaw_eps" value="0.005"/>
       </node>
     </group>
-    <!-- Cartographer 2D 激光里程计模式：cartographer_node 发布 odom -> base_link
-         （provide_odom_frame），lidar_loc 继续发布 map -> odom 全局修正。
-         需要 manual_control_server（8765）在宿主机运行以支撑 imu_bridge。 -->
-    <group if="$(eval arg('odom_mode') == 'carto')">
-      <!-- cartographer_node 1.0.0 用 gflags 命令行参数（不读 ROS param），
-           配置目录/文件名必须经 args 传入。 -->
-      <node pkg="cartographer_ros" type="cartographer_node"
-            name="cartographer_node" output="screen"
-            args="-configuration_directory $(find robot_dog_navigation)/config -configuration_basename cartographer_2d.lua">
-        <remap from="scan" to="/scan_filtered"/>
-      </node>
-      <node pkg="robot_dog_navigation" type="imu_bridge.py"
-            name="imu_bridge" output="screen">
-        <param name="imu_url" value="http://127.0.0.1:8765/imu"/>
-        <param name="rate" value="30.0"/>
-        <param name="imu_topic" value="/imu"/>
-      </node>
-      <!-- cartographer 只发 TF 不发 /odom 消息，由 carto_odom 桥补发
-           （只发消息不发 TF，避免与 cartographer 双发布者冲突）。 -->
-      <node pkg="robot_dog_navigation" type="carto_odom.py"
-            name="carto_odom" output="screen">
-        <param name="odom_topic" value="/odom"/>
-        <param name="rate" value="30.0"/>
-      </node>
-    </group>
     <node pkg="robot_dog_navigation" type="initial_pose_publisher.py"
           name="initial_pose_publisher" output="screen">
       <param name="init_x" value="$(arg init_x)"/>
@@ -228,6 +211,50 @@
               command="load" ns="local_costmap"/>
     <rosparam file="$(find robot_dog_navigation)/config/local_costmap.yaml"
               command="load" ns="local_costmap"/>
+    </node>
+  </group>
+
+  <!-- Cartographer 2D 模式（odom_mode=carto，独立于上方 unless enable_mapping
+       的定位 group，建图/定位两用）：
+       定位模式（enable_mapping:=false）：cartographer_node 发布 odom -> base_link
+       （provide_odom_frame），lidar_loc 继续发布 map -> odom 全局修正；
+       建图模式（enable_mapping:=true）：无 map_server/lidar_loc/move_base，
+       cartographer 全局 SLAM 自行发布 map -> odom 与 /map 子图，纯雷达从零建图。
+       两种模式都需要 manual_control_server（8765）在宿主机运行以支撑 imu_bridge。 -->
+  <group if="$(eval arg('odom_mode') == 'carto')">
+    <!-- cartographer_node 1.0.0 用 gflags 命令行参数（不读 ROS param），
+         配置目录/文件名必须经 args 传入。 -->
+    <node pkg="cartographer_ros" type="cartographer_node"
+          name="cartographer_node" output="screen"
+          args="-configuration_directory $(find robot_dog_navigation)/config -configuration_basename cartographer_2d.lua">
+      <remap from="scan" to="/scan_filtered"/>
+      <!-- use_odometry=true：订阅 /odom_imu（simple_odom yaw_only，仅 IMU 朝向） -->
+      <remap from="odom" to="/odom_imu"/>
+    </node>
+    <!-- 给 Cartographer 的 IMU 朝向先验（yaw_only：位置不积分、不发 TF，
+         位置全交给激光匹配；wz 用 IMU 差分替代 cmd_vel 的 wz）。 -->
+    <node pkg="robot_dog_navigation" type="simple_odom.py"
+          name="simple_odom_imu" output="screen">
+      <param name="position_mode" value="yaw_only"/>
+      <param name="publish_tf" value="false"/>
+      <param name="odom_topic" value="/odom_imu"/>
+      <param name="init_x" value="$(arg init_x)"/>
+      <param name="init_y" value="$(arg init_y)"/>
+      <param name="init_yaw" value="$(arg init_yaw)"/>
+      <param name="imu_url" value="http://127.0.0.1:8765/imu"/>
+    </node>
+    <node pkg="robot_dog_navigation" type="imu_bridge.py"
+          name="imu_bridge" output="screen">
+      <param name="imu_url" value="http://127.0.0.1:8765/imu"/>
+      <param name="rate" value="30.0"/>
+      <param name="imu_topic" value="/imu"/>
+    </node>
+    <!-- cartographer 只发 TF 不发 /odom 消息，由 carto_odom 桥补发
+         （只发消息不发 TF，避免与 cartographer 双发布者冲突）。 -->
+    <node pkg="robot_dog_navigation" type="carto_odom.py"
+          name="carto_odom" output="screen">
+      <param name="odom_topic" value="/odom"/>
+      <param name="rate" value="30.0"/>
     </node>
   </group>
 

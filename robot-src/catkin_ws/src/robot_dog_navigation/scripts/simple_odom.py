@@ -48,6 +48,11 @@ class SimpleOdom:
         # still and breaking lidar_loc / move_base feedback.
         self.cmd_timeout = rospy.get_param("~cmd_timeout", 0.5)
         self._cmd_stamp = None
+        # 位置模式：integrate（默认，cmd_vel 积分，foot 打滑不可靠，仅兜底）；
+        # yaw_only（给 Cartographer 用）：位置不积分（保持 init 位姿，位置全交给
+        # 激光匹配），只发布 IMU 朝向（yaw + IMU 差分角速度 wz），vx 恒 0。
+        self.position_mode = rospy.get_param("~position_mode", "integrate")
+        self.publish_tf = rospy.get_param("~publish_tf", True)
 
         self.lock = threading.Lock()
         self.x = self.init_x
@@ -58,6 +63,7 @@ class SimpleOdom:
         self.last_time = None
         self._last_raw = None
         self._accum_yaw = None
+        self._last_heading = None  # yaw_only：上一帧 heading，用于 IMU 差分角速度
 
         self.pub = rospy.Publisher(
             rospy.get_param("~odom_topic", "/odom"), Odometry, queue_size=10)
@@ -127,6 +133,12 @@ class SimpleOdom:
         if heading is not None:
             with self.lock:
                 self.yaw = heading
+                if self.position_mode == "yaw_only":
+                    # IMU 差分角速度（wz）：作为 Cartographer 的旋转先验，
+                    # 替代不可靠的 cmd_vel angular.z
+                    if self._last_heading is not None and dt > 0:
+                        self.wz = wrap_pi(heading - self._last_heading) / dt
+                    self._last_heading = heading
         else:
             yaw += wz * dt
             with self.lock:
@@ -135,22 +147,29 @@ class SimpleOdom:
 
         vx = 0.0 if abs(vx) < self.vx_eps else vx
 
-        dx = vx * math.cos(heading) * dt * self.odom_scale
-        dy = vx * math.sin(heading) * dt * self.odom_scale
-        # Per-frame displacement clamp: 0.10 m @ 10 Hz == 1.0 m/s ceiling.
-        # Tune up if the foot gait moves faster than that; too low silently
-        # drops real motion (rviz robot stays put while the robot walks).
-        if abs(dx) > self.d_max or abs(dy) > self.d_max:
-            dx = dy = 0.0
-        x += dx
-        y += dy
-        with self.lock:
-            self.x, self.y = x, y
+        if self.position_mode == "yaw_only":
+            # yaw_only：位置不积分（保持 init 位姿），位置全交给激光匹配；
+            # vx 置 0 表示无平移先验
+            vx = 0.0
+            x, y = self.init_x, self.init_y
+        else:
+            dx = vx * math.cos(heading) * dt * self.odom_scale
+            dy = vx * math.sin(heading) * dt * self.odom_scale
+            # Per-frame displacement clamp: 0.10 m @ 10 Hz == 1.0 m/s ceiling.
+            # Tune up if the foot gait moves faster than that; too low silently
+            # drops real motion (rviz robot stays put while the robot walks).
+            if abs(dx) > self.d_max or abs(dy) > self.d_max:
+                dx = dy = 0.0
+            x += dx
+            y += dy
+            with self.lock:
+                self.x, self.y = x, y
 
         q = quaternion_from_euler(0.0, 0.0, heading)
         stamp = rospy.Time.now()
-        self.br.sendTransform(
-            (x, y, 0.0), q, stamp, self.child_frame_id, self.frame_id)
+        if self.publish_tf:
+            self.br.sendTransform(
+                (x, y, 0.0), q, stamp, self.child_frame_id, self.frame_id)
         odom = Odometry()
         odom.header.stamp = stamp
         odom.header.frame_id = self.frame_id

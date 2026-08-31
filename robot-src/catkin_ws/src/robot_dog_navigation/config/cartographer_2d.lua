@@ -1,7 +1,8 @@
 -- Cartographer 2D configuration for the RICAM dog as a laser odometry layer
 -- (odom -> base_link).  The M-7.0.0b8 firmware exposes no raw accel/gyro
 -- stream and the foot gait has no wheel encoders, so this is laser-only:
--- use_imu_data=false and use_odometry=false.  The scan is /scan_filtered
+-- use_imu_data=false（固件无原始 accel/gyro）；use_odometry=true（/odom_imu，
+-- simple_odom yaw_only 仅 IMU 朝向先验）。The scan is /scan_filtered
 -- (10 Hz, range filtered to the 3.0 x 2.5 m arena, 0.25 m near-field cut).
 include "map_builder.lua"
 include "trajectory_builder.lua"
@@ -15,12 +16,20 @@ options = {
   odom_frame = "odom",
   provide_odom_frame = true,
   publish_frame_projected_to_2d = false,
-  use_odometry = false,
+  -- 运动先验：use_odometry=true 订阅 /odom（launch 中 remap 到 /odom_imu），
+  -- 该 odom 由 simple_odom 以 yaw_only 模式发布：仅含 IMU 朝向（yaw + IMU
+  -- 差分角速度），位置恒等、vx=0——朝向用 IMU（可靠），位置全交给激光匹配。
+  -- use_imu_data=false：M-7.0.0b8 固件无原始 accel/gyro，无法提供重力向量。
+  use_odometry = true,
   use_nav_sat = false,
   use_landmarks = false,
   num_laser_scans = 1,
   num_multi_echo_laser_scans = 0,
-  num_subdivisions_per_laser_scan = 10,
+  -- ydlidar 的 scan 点无有效 per-point 时间偏移，subdivision 段间时间恒等，
+  -- cartographer 报 "previous subdivision time ... is not before current" 并
+  -- 忽略大部分 scan（建图停滞）；且 1.0.0 要求 >=1（0 会 CHECK 崩溃）。
+  -- 设 1 = 整帧一段不细分，跨帧按 header.stamp 比较即可正常推进。
+  num_subdivisions_per_laser_scan = 1,
   num_point_clouds = 0,
   lookup_transform_timeout_sec = 0.2,
   submap_publish_period_sec = 0.3,
