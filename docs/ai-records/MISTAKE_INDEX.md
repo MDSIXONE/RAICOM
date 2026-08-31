@@ -4,6 +4,13 @@
 
 ## 主题索引
 
+- 测试循环退出条件/状态机短路（最终态不再消费输入源）：2026-09-01.md
+- f-string 格式化/日志节流掩盖测试盲区：2026-09-01.md
+- 进程管理（pkill -f 匹配自身/bash -lc 长字符串 argv）：2026-09-01.md、2026-08-17.md、2026-08-16.md、2026-08-08.md
+- ROS launch arg 顺序（先使用后定义）：2026-08-31.md
+- Cartographer 建图分支条件：2026-08-31.md
+- Cartographer num_subdivisions 时间戳坑：2026-08-31.md
+
 - ROS TF/坐标变换（tf1 vs tf2）：2026-08-08.md
 - 运动限幅与运动标定：2026-08-08.md、2026-08-04.md
 - ROS 包管理与 launch 节点解析：2026-08-08.md
@@ -27,7 +34,7 @@
 - ROS 环境初始化/容器边界：2026-08-02.md
 - 供应商 SDK 集成：2026-08-02.md
 - 硬件安全边界（端口/时间）：2026-08-02.md
-- 轮毂电机驱动诊断：2026-08-08.md、2026-08-11.md、2026-08-13.md
+- 轮毂电机驱动诊断：2026-08-08.md、2026-08-11.md、2026-08-13.md、2026-08-31.md
 - HTTP 轮控刷新频率：2026-08-13.md
 - Python OpenCV 运行时依赖：2026-08-13.md
 - 机械臂姿态/车体低趴顺序：2026-08-14.md
@@ -172,6 +179,20 @@
 - ROS Noetic 官方 apt 无 arm64 cartographer 预编译包（需源码编译）
 - 脚本改版后漏部署真机/容器导致实机跑旧版（imu_bridge fetch failed: 'accel'）
 - cartographer_node 1.0.0 用 gflags 命令行参数不读 ROS param（launch 需用 node args）
+
+### 2026-09-01
+
+- 日志 f-string 对三元表达式 '--' 应用 :.2f 崩溃，且 0.3s 节流掩盖测试盲区
+- docker exec bash -lc 长字符串里 pkill -f 匹配自身 argv 导致桥脚本被杀
+- 测试循环用"输入源耗尽"作退出条件，被测方法最终态短路导致死循环
+
+### 2026-08-31
+
+- 左后轮通道3 复测仍不转（ACK ok，+1.2/+1.5/-1.5 均无现场转动）
+
+- roslaunch $(eval arg()) 先使用后定义：requires the 'odom_mode' arg to be set
+- Cartographer 纯激光建图分支的节点条件设计
+- Cartographer num_subdivisions_per_laser_scan 时间戳坑
 
 ### 2026-08-30
 

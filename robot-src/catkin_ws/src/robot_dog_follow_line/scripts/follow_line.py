@@ -7,6 +7,8 @@
 # encoding: utf-8
 import json
 import math
+import urllib.error
+import urllib.request
 import select
 import signal
 import sys
@@ -38,6 +40,19 @@ button = Button()
 
 STREAM_PORT = 8090  # 带框原画面
 MASK_PORT = 8091    # 阈值（二值掩码）画面
+# 雷达后方第一个右转定位（替代线宽突变）：轮询后方距离 HTTP
+REAR_RANGE_URL = "http://127.0.0.1:8767/rear"
+DEFAULT_REAR_DIP_FROM_M = 2.0      # 阶段1：rear 曾 > 该值（起点后方开阔）
+DEFAULT_REAR_DIP_TO_M = 1.0        # 阶段1：rear 首次 < 该值 = 第一个右转（开启功能）
+DEFAULT_REAR_TURN_AT_STEPS_M = [0.75, 1.5]  # 阶段2触发距离列表（依次生效）：0.75 一次、1.5 一次（2026-09-01 改）
+DEFAULT_REAR_YAW_MIN_DEG = 30.0   # 阶段2第1次触发前要求 |yaw 变化| ≥ 该值（80°实机达不到：弯道幅度仅~30°，2026-09-01 降）
+DEFAULT_REAR_TURN_DEG = 90.0       # 右转/左转角度（度）
+DEFAULT_REAR_TURN_SPEED = 16       # 转向速度绝对值（负=右转，正=左转）
+DEFAULT_REAR_HOLD_S = 2.0          # 右转后停顿时长（秒）
+DEFAULT_REAR_TURN_TIMEOUT = 10.0   # 每段 yaw 闭环超时（秒）
+DEFAULT_USE_REAR_TRIGGER = True    # True=用雷达后方；False=回退线宽突变
+DEFAULT_USE_LINE_SURGE = False     # 改用雷达后默认关闭线宽突变
+DEFAULT_LOCK_WHEELS = True         # foot 巡线行进中锁 4 轮（wheel_control 128 抱死，防轮子自由滚动漂移）
 
 
 class StreamingOutput:
@@ -107,34 +122,94 @@ FOLLOW_LINE_CONFIG = Path(__file__).resolve().parent / "follow_line_config.json"
 DEFAULT_LOWER_BLACK = [0, 0, 0]
 DEFAULT_UPPER_BLACK = [180, 255, 30]
 DEFAULT_CROP = [0, 319]  # 左右裁剪 [left_x, right_x]（保留区间，0~319），默认全宽
-DEFAULT_LINE_WIDTH = [5, 100]  # 线宽过滤 [min_px, max_px]：minAreaRect 短边，防误跟其他线/杂物
+DEFAULT_LINE_WIDTH = [5, 150]  # 线宽过滤 [min_px, max_px]：minAreaRect 短边；上限 150 给弯道粗块留余量（突变 raw>95 仍可跟踪）
+# 运动控制默认（2026-08-31：全部可写入 follow_line_config.json，边走边调后按 s 保存即为下次启动默认）
+DEFAULT_PID = [396.0, 0, 30.0]          # [P, I, D]
+DEFAULT_STRAIGHT_SPEED = 6              # 直行 move_x 速度（2026-08-31 实机再降：8→6）
+DEFAULT_TURN_MOVE_SPEED = 4             # 转向时前进速度（2026-08-31 实机再降：6→4）
+DEFAULT_DIRECTION = 1                   # 转向方向：1=原厂方向，-1=反
+DEFAULT_MODE = 'foot'                   # 运动方式：foot 足式 / wheel 轮式
+DEFAULT_WHEEL_BASE = 145                # 轮式基础速度字节（>128 前进）
 
 
-def load_follow_line_hsv(config_path=FOLLOW_LINE_CONFIG):
-    """读取同目录 follow_line_config.json；不存在则返回原厂默认并提示。"""
+def load_follow_line_config(config_path=FOLLOW_LINE_CONFIG):
+    """读取同目录 follow_line_config.json（HSV/裁剪/线宽 + 运动参数）。
+
+    缺失文件或缺字段时用默认值；返回完整配置 dict，字段与 save_follow_line_config
+    一致，供 LineDetect 启动时一次性应用。
+    """
+    defaults = {
+        "lower": list(DEFAULT_LOWER_BLACK),
+        "upper": list(DEFAULT_UPPER_BLACK),
+        "crop": list(DEFAULT_CROP),
+        "line_width": list(DEFAULT_LINE_WIDTH),
+        "pid": list(DEFAULT_PID),
+        "straight_speed": DEFAULT_STRAIGHT_SPEED,
+        "turn_move_speed": DEFAULT_TURN_MOVE_SPEED,
+        "direction": DEFAULT_DIRECTION,
+        "mode": DEFAULT_MODE,
+        "wheel_base": DEFAULT_WHEEL_BASE,
+        "lock_wheels": DEFAULT_LOCK_WHEELS,
+        "rear_dip_from_m": DEFAULT_REAR_DIP_FROM_M,
+        "rear_dip_to_m": DEFAULT_REAR_DIP_TO_M,
+        "rear_turn_at_steps_m": list(DEFAULT_REAR_TURN_AT_STEPS_M),
+        "rear_yaw_min_deg": DEFAULT_REAR_YAW_MIN_DEG,
+        "rear_turn_deg": DEFAULT_REAR_TURN_DEG,
+        "rear_hold_s": DEFAULT_REAR_HOLD_S,
+    }
     if not config_path.is_file():
         print(
-            f"未找到 {config_path.name}，使用原厂默认 HSV "
-            f"lower={DEFAULT_LOWER_BLACK} upper={DEFAULT_UPPER_BLACK} "
-            f"crop={DEFAULT_CROP} line_width={DEFAULT_LINE_WIDTH}"
+            f"未找到 {config_path.name}，使用默认 "
+            f"lower={defaults['lower']} upper={defaults['upper']} "
+            f"crop={defaults['crop']} line_width={defaults['line_width']} "
+            f"pid={defaults['pid']} spd={defaults['straight_speed']}/"
+            f"{defaults['turn_move_speed']} dir={defaults['direction']} "
+            f"mode={defaults['mode']}"
         )
-        return (
-            np.array(DEFAULT_LOWER_BLACK, dtype="uint8"),
-            np.array(DEFAULT_UPPER_BLACK, dtype="uint8"),
-            list(DEFAULT_CROP),
-            list(DEFAULT_LINE_WIDTH),
-        )
+        return defaults
     with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    lower = np.array(data["lower"], dtype="uint8")
-    upper = np.array(data["upper"], dtype="uint8")
-    crop = list(data.get("crop", DEFAULT_CROP))
-    line_width = list(data.get("line_width", DEFAULT_LINE_WIDTH))
+    cfg = dict(defaults)
+    for key in cfg:
+        if key in data:
+            cfg[key] = data[key]
     print(
-        f"已加载巡线 HSV 配置 {config_path}: lower={lower.tolist()} "
-        f"upper={upper.tolist()} crop={crop} line_width={line_width}"
+        f"已加载巡线配置 {config_path}: lower={cfg['lower']} upper={cfg['upper']} "
+        f"crop={cfg['crop']} line_width={cfg['line_width']} pid={cfg['pid']} "
+        f"spd={cfg['straight_speed']}/{cfg['turn_move_speed']} "
+        f"dir={cfg['direction']} mode={cfg['mode']}"
     )
-    return lower, upper, crop, line_width
+    return cfg
+
+
+def save_follow_line_config(line_detect, config_path=FOLLOW_LINE_CONFIG):
+    """把当前巡线参数（视觉 + 运动）写回 follow_line_config.json（s 键调用）。
+
+    保存后下次启动 follow_line.py / follow_line_tune.py 即以这些值为默认。
+    """
+    payload = {
+        "lower": [int(x) for x in line_detect.color.lower_black],
+        "upper": [int(x) for x in line_detect.color.upper_black],
+        "crop": [int(x) for x in line_detect.color.crop],
+        "line_width": [int(x) for x in line_detect.color.line_width],
+        "pid": [float(x) for x in line_detect.FollowLinePID],
+        "straight_speed": int(line_detect.straight_speed),
+        "turn_move_speed": int(line_detect.turn_move_speed),
+        "direction": int(line_detect.direction),
+        "mode": str(line_detect.mode),
+        "wheel_base": int(line_detect.wheel_base),
+        "lock_wheels": bool(line_detect.lock_wheels),
+        "rear_dip_from_m": float(line_detect.rear_dip_from_m),
+        "rear_dip_to_m": float(line_detect.rear_dip_to_m),
+        "rear_turn_at_steps_m": [float(v) for v in line_detect.rear_turn_at_steps_m],
+        "rear_yaw_min_deg": float(line_detect.rear_yaw_min_deg),
+        "rear_turn_deg": float(line_detect.rear_turn_deg),
+        "rear_hold_s": float(line_detect.rear_hold_s),
+    }
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
+    print(f"已保存巡线参数 {config_path}: {payload}", flush=True)
 
 
 # 定义颜色跟踪类
@@ -242,6 +317,9 @@ class color_follow:
             imgok = Image.fromarray(image)
             display.ShowImage(imgok)
         else:
+            self.best_line_w = 0
+            self.raw_line_w = 0
+            self.best_area = 0
             return rgb_img, binary, None
         return rgb_img, binary, (self.Center_x, self.Center_y, self.Center_r)
 
@@ -329,12 +407,15 @@ class LineDetect:
         self.windows_name = 'frame'
         self.color = color_follow()
         self.cols, self.rows = 0, 0
-        self.FollowLinePID = [396.0, 0, 30.0]  # 实机标定（2026-08-30）：P=396/D=30 基本巡线；边走边调 p/o/i/u
-        self.straight_speed = 8  # 直行 move_x 速度（原厂 18 实机太快，边走边调 [ ] ±1）
-        self.turn_move_speed = 6  # 转向时前进速度（原厂 15 实机太快，边走边调 - = ±1）
-        self.direction = 1  # 转向方向：1=原厂方向，-1=反（t 键切换，实机方向反时用）
-        self.mode = 'foot'  # 运动方式：foot 足式 / wheel 轮式（m 键切换）
-        self.wheel_base = 145  # 轮式基础速度字节（>128 前进；直行 145 约 0.2m/s 量级）
+        # 默认值见文件顶部 DEFAULT_* 常量；启动时由 load_follow_line_config() 覆盖为
+        # follow_line_config.json 中的保存值（边走边调按 s 保存）
+        self.FollowLinePID = list(DEFAULT_PID)  # 实机标定（2026-08-30）：P=396/D=30 基本巡线；边走边调 p/o/i/u
+        self.straight_speed = DEFAULT_STRAIGHT_SPEED  # 直行 move_x 速度（原厂 18 实机太快，边走边调 [ ] ±1）
+        self.turn_move_speed = DEFAULT_TURN_MOVE_SPEED  # 转向时前进速度（原厂 15 实机太快，边走边调 - = ±1）
+        self.direction = DEFAULT_DIRECTION  # 转向方向：1=原厂方向，-1=反（t 键切换，实机方向反时用）
+        self.mode = DEFAULT_MODE  # 运动方式：foot 足式 / wheel 轮式（m 键切换）
+        self.wheel_base = DEFAULT_WHEEL_BASE  # 轮式基础速度字节（>128 前进；直行 145 约 0.2m/s 量级）
+        self.lock_wheels = DEFAULT_LOCK_WHEELS  # foot 行进中锁 4 轮（wheel_control 128 抱死）
         self._lost = False  # 丢线状态（日志：丢线开始/恢复 + 持续时长）
         self._lost_ts = 0.0
         self._lost_frame = 0  # 连续丢线帧数：≥5 帧（约 0.5s）才确认真丢线并启动探测，
@@ -346,8 +427,9 @@ class LineDetect:
         self._probe_active = False  # 探测进行中
         self._probe_step = 0        # 已转格数
         self._probe_cooldown = 0.0  # 探测完成后冷却：冷却期内再丢线不重复探测（防死循环）
-        # 线宽突变检测（2026-08-31）：raw_line_w > 75px 且连续 3 帧 → 右转 90°
-        self.surge_lw_thresh = 75   # 突变绝对阈值（px）：超过即弯道
+        # 线宽突变检测（2026-08-31）：raw_line_w > 95px 且连续 3 帧 → 右转 90°
+        # （2026-08-31 实机：正常段约 89px 误触发 75，改 95）
+        self.surge_lw_thresh = 95   # 突变绝对阈值（px）：超过即弯道
         self.surge_frames = 3       # 连续突变帧数
         # 右转 90° 改 IMU yaw 闭环（2026-09-01）：不再盲转固定时长（turn(-16)×4.2s
         # 开环——转弯时摇晃看不到线也照转，转多转少无反馈）；读机载 IMU yaw 累积角
@@ -358,13 +440,55 @@ class LineDetect:
         self.surge_turn_timeout = 10.0   # 闭环超时(秒)：yaw 异常/转不动时停转保护
         self._lw_surge = 0          # 连续突变计数
         self._surge_active = False  # 线宽突变右转执行中
+        # 雷达后方第一个右转定位（2026-09-01）：rear 首次 >2m→<1m = 第一个右转（开启
+        # 功能）；此后 rear 增大到 ≥1.5m 时右转 90° → 停 2s → 左转 90° 回正 → 继续巡线
+        self.use_rear_trigger = DEFAULT_USE_REAR_TRIGGER
+        self.use_line_surge = DEFAULT_USE_LINE_SURGE
+        self.rear_dip_from_m = DEFAULT_REAR_DIP_FROM_M
+        self.rear_dip_to_m = DEFAULT_REAR_DIP_TO_M
+        self.rear_turn_at_steps_m = list(DEFAULT_REAR_TURN_AT_STEPS_M)
+        self.rear_yaw_min_deg = DEFAULT_REAR_YAW_MIN_DEG
+        self.rear_turn_deg = DEFAULT_REAR_TURN_DEG
+        self.rear_turn_speed = DEFAULT_REAR_TURN_SPEED
+        self.rear_hold_s = DEFAULT_REAR_HOLD_S
+        self.rear_turn_timeout = DEFAULT_REAR_TURN_TIMEOUT
+        self.rear_range_url = REAR_RANGE_URL
+        self._rear_dip_done = False     # 阶段1：已识别第一个右转（rear 曾 >from，首次 <to）
+        self._rear_turn_step = 0        # 阶段2：已完成的转向序列次数（=下一个触发阈值索引）
+        self._rear_seen_far = False     # 曾见 rear > dip_from（起点后方开阔），阶段1前提
+        self._rear_yaw0 = None          # 阶段1触发时刻的 yaw 基准（第1次转向序列前验证转过 ≥rear_yaw_min_deg）
+        self._last_rear_yaw_wait_log_ts = 0.0  # yaw 等待日志节流
+        self._last_rear_m = float("nan")
+        self._last_rear_log_ts = 0.0
         self._cx_hist = deque(maxlen=10)
         self._area_hist = deque(maxlen=10)
         self.PID_init()
-        self.color.lower_black, self.color.upper_black, self.color.crop, self.color.line_width = load_follow_line_hsv()
         self.dog = XGO(port='/dev/ttyAMA0', version="xgolite")
         self.dog_type = 'L'
         self.dog_init()
+        # 应用 follow_line_config.json（HSV/裁剪/线宽 + 运动参数；s 键保存后
+        # 即为下次启动默认）；wheel 模式需启用轮控
+        cfg = load_follow_line_config()
+        self.color.lower_black = np.array(cfg["lower"], dtype="uint8")
+        self.color.upper_black = np.array(cfg["upper"], dtype="uint8")
+        self.color.crop = list(cfg["crop"])
+        self.color.line_width = list(cfg["line_width"])
+        self.FollowLinePID = [float(v) for v in cfg["pid"]]
+        self.straight_speed = int(cfg["straight_speed"])
+        self.turn_move_speed = int(cfg["turn_move_speed"])
+        self.direction = int(cfg["direction"])
+        self.mode = str(cfg["mode"])
+        self.wheel_base = int(cfg["wheel_base"])
+        self.lock_wheels = bool(cfg["lock_wheels"])
+        self.rear_dip_from_m = float(cfg["rear_dip_from_m"])
+        self.rear_dip_to_m = float(cfg["rear_dip_to_m"])
+        self.rear_turn_at_steps_m = [float(v) for v in cfg["rear_turn_at_steps_m"]]
+        self.rear_yaw_min_deg = float(cfg["rear_yaw_min_deg"])
+        self.rear_turn_deg = float(cfg["rear_turn_deg"])
+        self.rear_hold_s = float(cfg["rear_hold_s"])
+        self.PID_init()
+        if self.mode == 'wheel' and hasattr(self.dog, 'enable_wheel_control'):
+            self.dog.enable_wheel_control(1)
         
     def execute(self, point_x, point_y, radius):
         """
@@ -416,6 +540,21 @@ class LineDetect:
         else:
             self.dog.stop()
 
+    def lock_wheels_now(self):
+        """锁 4 轮（转向序列期间用）：enable_wheel_control(1) + wheel_control(128) 抱死，
+        防转向时轮子滑动漂移。128=停，>128 前进，<128 后退。
+        """
+        if self.lock_wheels and self.mode == 'foot':
+            if hasattr(self.dog, 'enable_wheel_control'):
+                self.dog.enable_wheel_control(1)
+            self.dog.wheel_control([128, 128, 128, 128])
+
+    def unlock_wheels(self):
+        """解锁轮子（转向序列完成后）：enable_wheel_control(0) 恢复默认腿模式。"""
+        if self.lock_wheels and self.mode == 'foot':
+            if hasattr(self.dog, 'enable_wheel_control'):
+                self.dog.enable_wheel_control(0)
+
     def log_bias(self, point_x, crop_center, z_Pid, detail=""):
         """节流（0.5s）打印线相对画面的偏左/偏右 + 实际输出（轮式 L/R、足式 turn）。"""
         now = time.time()
@@ -450,7 +589,8 @@ class LineDetect:
         self.log_bias(point_x, crop_center, z_Pid, detail=f"L={left} R={right}")
 
     def switch_mode(self):
-        """foot<->wheel 切换：wheel 需 enable_wheel_control(1)，切回恢复 0。"""
+        """foot<->wheel 切换：wheel 需 enable_wheel_control(1)；foot 若 lock_wheels
+        也保持 enable(1)（锁轮需要），否则恢复 0。"""
         if self.mode == 'foot':
             self.dog.stop()
             if hasattr(self.dog, 'enable_wheel_control'):
@@ -494,10 +634,10 @@ class LineDetect:
         self.dog.stop()
         self.dog.pace('normal')
         self.dog.gait_type("slow_trot")
-        # 默认低趴姿态（z=10/p=15，与抓球接近姿态一致）：站立（z=75）视角太远，
-        # 低趴后相机俯视近处地面，黑线更清晰
-        self.dog.translation('z', 10)
-        self.dog.attitude('p', 15)
+        # 低趴且前后等高：z=0 再压低（原 z=10；xgomini z 约±19.5，0 更贴地）；p=0（不用抓球 p=15——俯仰会低头翘臀，
+        # 后腿看起来比前腿高）。不单独改 31/41，四腿由固件按 translation 对称落地。过低影响步态则回调 z。
+        self.dog.translation('z', 0)
+        self.dog.attitude('p', 0)
         time.sleep(2)
 
     def start_probe(self):
@@ -560,8 +700,127 @@ class LineDetect:
         else:
             logging.warning('[丢线] 探测限格内未见线，停止')
 
+
+    def fetch_rear_range_m(self):
+        """读雷达正后方扇区距离（m）。服务未起/失败返回 None（暴露，不装死）。"""
+        try:
+            with urllib.request.urlopen(self.rear_range_url, timeout=0.2) as resp:
+                data = json.loads(resp.read().decode())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            now = time.time()
+            if now - getattr(self, "_last_rear_err_ts", 0.0) >= 2.0:
+                self._last_rear_err_ts = now
+                logging.warning(f"[雷达后方] 读取失败: {exc}")
+            return None
+        if not data.get("ok"):
+            return None
+        val = data.get("rear_m")
+        if val is None:
+            return None
+        return float(val)
+
+    def check_rear_trigger(self):
+        """雷达后方第一个右转定位（2026-09-01，替代旧 armed+rising）。
+
+        阶段1（识别第一个右转）：曾见 rear > rear_dip_from_m（起点后方开阔）后，
+        首次 rear < rear_dip_to_m → 判定为第一个右转，开启功能（只一次）。
+        阶段2（转向序列，可多次）：功能开启后按 rear_turn_at_steps_m 依次触发——
+        rear 增大到阈值时执行 右转 90° → 停 rear_hold_s → 左转 90° 回正 → 继续
+        巡线；当前默认 [0.75, 1.5] 即 0.75 一次、1.5 一次，全部完成后不再触发。
+        第1次触发前加 yaw 验证：相对阶段1时刻的 yaw 基准须已转过 ≥ rear_yaw_min_deg
+        （默认 80°，防刚到转角就触发）；第2次起不要求（车已过弯）。
+        服务不可用时不触发（打日志）。
+        """
+        if not self.use_rear_trigger or self._surge_active:
+            return False
+        # 全部转向序列已完成：直接短路（process() 内调用无 step 前置条件，
+        # 不提前返回会走到日志行对 '--' 应用 :.2f 崩溃）
+        if self._rear_turn_step >= len(self.rear_turn_at_steps_m):
+            return False
+        rear_m = self.fetch_rear_range_m()
+        if rear_m is None:
+            return False
+        self._last_rear_m = rear_m
+        now = time.time()
+        if now - self._last_rear_log_ts >= 0.3:
+            self._last_rear_log_ts = now
+            logging.warning(
+                f"[雷达后方] rear={rear_m:.3f}m dip_done={self._rear_dip_done} "
+                f"step={self._rear_turn_step}/{len(self.rear_turn_at_steps_m)} "
+                f"next_at={self.rear_turn_at_steps_m[self._rear_turn_step]:.2f}m"
+            )
+        if not self._rear_dip_done:
+            # 阶段1：曾见 rear > from（起点后方开阔）后，首次 rear < to ＝ 第一个右转
+            if rear_m > self.rear_dip_from_m:
+                self._rear_seen_far = True
+            if self._rear_seen_far and rear_m < self.rear_dip_to_m:
+                self._rear_dip_done = True
+                # 记录阶段1时刻的 yaw 基准（第1次转向序列前验证转过 ≥ rear_yaw_min_deg）
+                try:
+                    self._rear_yaw0 = float(self.dog.read_yaw())
+                    yaw0_txt = f"yaw0={self._rear_yaw0:.1f}°"
+                except Exception as exc:
+                    self._rear_yaw0 = None
+                    yaw0_txt = f"yaw0读取失败({exc})"
+                steps = "/".join(f"{s:.2f}" for s in self.rear_turn_at_steps_m)
+                logging.warning(
+                    f"[雷达后方] 第一个右转：rear {rear_m:.2f}m "
+                    f"(曾 >{self.rear_dip_from_m:.1f}m 现 <{self.rear_dip_to_m:.1f}m)，{yaw0_txt}，功能开启："
+                    f"rear≥{steps}m 依次右转{self.rear_turn_deg:.0f}°→停"
+                    f"{self.rear_hold_s}s→左转{self.rear_turn_deg:.0f}°（第1次须已转过"
+                    f"≥{self.rear_yaw_min_deg:.0f}°）"
+                )
+            return False
+        # 阶段2：按步骤依次触发（每个阈值执行一次转向序列）
+        if self._rear_turn_step >= len(self.rear_turn_at_steps_m):
+            return False
+        target = self.rear_turn_at_steps_m[self._rear_turn_step]
+        if rear_m < target:
+            return False
+        # yaw 验证：第1次触发前要求相对阶段1基准已转过 ≥ rear_yaw_min_deg
+        # （防刚到转角就触发；第2次起车已过弯不再要求）
+        if self._rear_turn_step == 0 and self.rear_yaw_min_deg > 0:
+            if self._rear_yaw0 is None:
+                now = time.time()
+                if now - self._last_rear_yaw_wait_log_ts >= 2.0:
+                    self._last_rear_yaw_wait_log_ts = now
+                    logging.error("[雷达后方] yaw 基准缺失（阶段1读取失败），第1次转向不触发")
+                return False
+            try:
+                yaw_now = float(self.dog.read_yaw())
+            except Exception as exc:
+                logging.error(f"[雷达后方] yaw 读取失败: {exc}，第1次转向不触发")
+                return False
+            yaw_delta = yaw_now - self._rear_yaw0
+            if abs(yaw_delta) < self.rear_yaw_min_deg:
+                now = time.time()
+                if now - self._last_rear_yaw_wait_log_ts >= 0.5:
+                    self._last_rear_yaw_wait_log_ts = now
+                    logging.warning(
+                        f"[雷达后方] 等 yaw：已转过 {abs(yaw_delta):.1f}° < "
+                        f"{self.rear_yaw_min_deg:.0f}°（需转过后方可第1次转向）"
+                    )
+                return False
+            logging.warning(
+                f"[雷达后方] yaw 验证通过：已转过 {abs(yaw_delta):.1f}° "
+                f"≥ {self.rear_yaw_min_deg:.0f}°，允许第1次转向"
+            )
+        logging.warning(
+            f"[雷达后方] 第{self._rear_turn_step + 1}/{len(self.rear_turn_at_steps_m)}次："
+            f"rear={rear_m:.3f}m ≥ {target:.2f}m，右转 {self.rear_turn_deg:.0f}° → "
+            f"停 {self.rear_hold_s}s → 左转 {self.rear_turn_deg:.0f}° 回正"
+        )
+        self._rear_turn_step += 1
+        self._surge_active = True
+        self.start_rear_turn_seq()
+        self._surge_active = False
+        logging.warning(
+            f"[雷达后方] 第{self._rear_turn_step}/{len(self.rear_turn_at_steps_m)}次转向序列完成，继续巡线"
+        )
+        return True
+
     def check_line_surge(self, raw_lw):
-        """线宽突变检测（跟踪帧调用）：raw_line_w > 75px 连续 surge_frames 帧 → 右转 90°。
+        """线宽突变检测（跟踪帧调用）：raw_line_w > surge_lw_thresh 连续 surge_frames 帧 → 右转 90°。
 
         触发后 start_surge_turn() 阻塞完成右转（不依赖主循环状态机）。
         """
@@ -638,6 +897,35 @@ class LineDetect:
         self._area_hist.clear()
         logging.warning(f'[线宽右转] 90° 闭环转弯完成（ok={ok}），继续巡线')
 
+    def start_rear_turn_seq(self):
+        """雷达后方第一个右转后的转向序列：右转 90° → 停 hold 秒 → 左转 90° 回正 → 继续巡线。
+
+        锁轮时机（2026-09-01）：转向序列期间锁 4 轮（enable_wheel_control(1) +
+        wheel_control 128 抱死）防转向时轮子滑动漂移；左转回正完成后解锁
+        （enable_wheel_control(0) 恢复默认，平时行进不锁——全程锁轮会拖慢速度）。
+        两段转向都用 IMU yaw 闭环（speed 负=右转、正=左转；|yaw delta| ≥ rear_turn_deg
+        即停），每段独立超时，读取失败/超时停转打日志不静默。
+        """
+        self.lock_wheels_now()  # 右转前先锁轮
+        ok_r = self.turn_closed_loop(
+            self.rear_turn_deg, -abs(self.rear_turn_speed), self.rear_turn_timeout
+        )
+        logging.warning(
+            f'[雷达后方] 右转 {self.rear_turn_deg:.0f}° 完成（ok={ok_r}），停 {self.rear_hold_s}s'
+        )
+        time.sleep(self.rear_hold_s)
+        ok_l = self.turn_closed_loop(
+            self.rear_turn_deg, abs(self.rear_turn_speed), self.rear_turn_timeout
+        )
+        self.unlock_wheels()  # 左转回正完成后解锁
+        time.sleep(0.3)
+        self.PID_controller.timeOfLastCall = None
+        self._cx_hist.clear()
+        self._area_hist.clear()
+        logging.warning(
+            f'[雷达后方] 左转 {self.rear_turn_deg:.0f}° 回正完成（ok={ok_l}），继续巡线'
+        )
+
     def process(self, rgb_img, action):
         """
         处理输入的RGB图像，根据按键事件和跟踪状态进行相应操作
@@ -672,8 +960,11 @@ class LineDetect:
                 # 记录 cx 历史（丢线时用于弯道判定）
                 self._cx_hist.append(self.circle[0])
                 self._area_hist.append(self.color.best_area)
-                # 线宽突变检测：线宽 > 基线×5/3 连续多帧 → 右转（主循环切换状态机）
-                self.check_line_surge(self.color.raw_line_w)
+                # 雷达后方第一个右转定位（优先）；线宽突变可选（默认关）
+                if self.check_rear_trigger():
+                    pass
+                elif self.use_line_surge:
+                    self.check_line_surge(self.color.raw_line_w)
                 #print('检测到线条，巡线运动')
                 self.execute(self.circle[0], self.circle[1], self.circle[2])
             else:
@@ -811,7 +1102,7 @@ if __name__ == '__main__':
     settings = termios.tcgetattr(sys.stdin)
     try:
         tty.setraw(sys.stdin.fileno())
-        print("边走边调：p/o P±1  R/F P±50  i/u D±0.1  [ ] 直行±1  - = 转向±1  t 方向  m 轮/足式  Q 保存日志  Ctrl-C退出")
+        print("边走边调：p/o P±1  R/F P±50  i/u D±0.1  [ ] 直行±1  - = 转向±1  t 方向  m 轮/足式  s 保存参数(下次默认)  Q 保存日志  Ctrl-C退出")
         print_params(line_detect)
         _fps_cnt = 0
         _fps_t0 = time.time()
@@ -842,6 +1133,13 @@ if __name__ == '__main__':
             if line_detect._probe_active:
                 line_detect.probe_step(frame)
                 continue
+            # 雷达后方第一个右转：每帧检查（不依赖是否见线），阶段2按 rear_turn_at_steps_m
+            # 依次执行 右转90°→停2s→左转90° 转向序列（默认 0.75 一次、1.5 一次）
+            if (
+                line_detect.use_rear_trigger
+                and line_detect._rear_turn_step < len(line_detect.rear_turn_at_steps_m)
+            ):
+                line_detect.check_rear_trigger()
             action = 32
             frame, binary = line_detect.process(frame, action)
 
@@ -850,9 +1148,19 @@ if __name__ == '__main__':
             if _stream_cnt % 2:
                 continue
 
-            # 推流 8090：画框后的 RGB 帧，加水印区分原始流
+            # 实时线宽：过滤后 best / 突变用 raw / 阈值 thresh（8090+8091 水印 + 终端节流）
+            lw = float(line_detect.color.best_line_w)
+            raw_lw = float(line_detect.color.raw_line_w)
+            lw_th = float(line_detect.surge_lw_thresh)
+            lw_txt = f"lw={lw:.0f} raw={raw_lw:.0f}/{lw_th:.0f}"
+            now_lw = time.time()
+            if now_lw - getattr(line_detect, "_last_lw_log_ts", 0.0) >= 0.3:
+                line_detect._last_lw_log_ts = now_lw
+                logging.warning(f"[线宽] {lw_txt} crop={line_detect.color.crop}")
+
+            # 推流 8090：画框后的 RGB 帧，加水印区分原始流 + 实时线宽
             cv.putText(
-                frame, "FOLLOW " + line_detect.mode,
+                frame, "FOLLOW " + line_detect.mode + " " + lw_txt,
                 (4, 18), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv.LINE_AA,
             )
             ok, jpeg = cv.imencode(
@@ -862,14 +1170,14 @@ if __name__ == '__main__':
             if ok:
                 output_orig.set_frame(jpeg.tobytes())
 
-            # 推流 8091：阈值（二值掩码）画面 + 参数水印
+            # 推流 8091：阈值（二值掩码）画面 + 参数/线宽水印
             if isinstance(binary, np.ndarray):
                 mask_bgr = cv.cvtColor(binary, cv.COLOR_GRAY2BGR)
                 cv.putText(
                     mask_bgr,
                     f"MASK V={line_detect.color.upper_black[2]} "
-                    f"crop={line_detect.color.crop}",
-                    (4, 18), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv.LINE_AA,
+                    f"crop={line_detect.color.crop} {lw_txt}",
+                    (4, 18), cv.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv.LINE_AA,
                 )
                 ok2, jpeg2 = cv.imencode(
                     ".jpg", mask_bgr,
@@ -927,6 +1235,9 @@ if __name__ == '__main__':
             elif key == "m":
                 line_detect.switch_mode()
                 print_params(line_detect)
+            elif key == "s":
+                # 保存当前参数（视觉 + 运动）到 follow_line_config.json，下次启动即默认
+                save_follow_line_config(line_detect)
             elif key == "Q":
                 save_logs(shared_buf)
 
@@ -947,6 +1258,13 @@ if __name__ == '__main__':
             httpd_mask.shutdown()
         except Exception:
             pass
+        # 恢复固件默认：wheel 使能状态不残留（2026-08-16 教训：锁轮/wheel 模式残留
+        # 导致后续主流程 move_x 失效）；wheel 模式退出也一并恢复 0
+        if hasattr(line_detect.dog, 'enable_wheel_control'):
+            try:
+                line_detect.dog.enable_wheel_control(0)
+            except Exception as exc:
+                print(f"enable_wheel_control(0) 恢复失败: {exc}", flush=True)
         # SIGINT 免疫且不恢复：解释器退出时 picamera2 的 atexit close() 会 join
         # 预览线程，此时 Ctrl-C 会打断它导致 "Exception ignored in atexit callback"
         signal.signal(signal.SIGINT, signal.SIG_IGN)

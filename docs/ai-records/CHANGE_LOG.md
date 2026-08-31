@@ -1,5 +1,434 @@
 # 代码改动记录
 
+## 2026-09-01｜直行速度 10 → 5（锁轮改回仅转向序列，无需大速度补偿）
+
+- 状态：改动完成（已改机器配置）
+- 目标：锁轮改为仅转向序列后平时不锁轮，用户把直行速度降回 5。
+- 影响文件：机器 `follow_line_config.json` `straight_speed 10→5`；备份
+  `backups/follow_line_config.json.*`；本记录。
+- 验证：JSON 合法；须重启 follow_line 生效。
+
+## 2026-09-01｜锁轮时机改为仅在转向序列（右转前锁、回正后解锁）
+
+- 状态：改动完成（已部署）
+- 目标：用户反馈全程锁轮拖慢速度；改为只在转向序列（右转90°→停2s→左转90°回正）
+  期间锁轮——右转前先锁（防转向时轮子滑动漂移），左转回正完成后解锁，平时行进不锁。
+- 影响文件：`follow_line.py`：
+  - `execute()` 移除两处 `lock_wheels_now()`（行进中不再锁）
+  - `lock_wheels_now()` 改为 enable_wheel_control(1) + wheel_control(128)；新增
+    `unlock_wheels()`（enable_wheel_control(0) 恢复默认）
+  - `start_rear_turn_seq()`：开头锁轮、左转回正后解锁（中断/超时也会走到解锁？
+    否——turn_closed_loop 内部失败会停转返回，但解锁在 ok_l 之后，若右转超时返回
+    False 仍继续执行左转和解锁；若左转异常抛错则不解锁，由退出 finally 的
+    enable(0) 兜底）
+  - 启动/切回 foot 不再无条件 enable(1)（仅 wheel 模式）
+  - 退出 finally 保留 enable_wheel_control(0) 恢复兜底
+- 验证：py_compile；9 逻辑用例全 PASS；已部署机器（scp + 机器端 py_compile OK）。
+- 遗留风险：转向序列期间锁轮若使 turn 异常（实测 lock+move_x 可用，turn 未单独
+  验证），解锁在左转后；异常路径由退出恢复兜底。
+
+## 2026-09-01｜锁轮后直行速度 6 → 10（补偿轮锁阻力）
+
+- 状态：改动完成（已改机器配置）
+- 目标：用户反馈锁轮后速度变小，要求加大前进速度。
+- 影响文件：机器 `follow_line_config.json` `straight_speed 6→10`；备份
+  `backups/follow_line_config.json.*`；本记录。
+- 验证：JSON 合法；须重启 follow_line 生效；现场可用 `[`/`]` 键 ±1 微调（按 s 保存）。
+- 遗留风险：速度加大会影响 PID 跟随（弯道可能跟不上）；turn_move_speed 保持 4 未动。
+
+## 2026-09-01｜巡线行进中锁 4 轮（lock_wheels）：防轮子自由滚动漂移
+
+- 状态：改动完成（已部署）
+- 目标：用户要求 foot 巡线行进过程中锁住 4 个轮子（防步态行走时轮子自由滚动漂移）。
+- 影响文件：
+  - `follow_line.py`：新增 `DEFAULT_LOCK_WHEELS=True`（config 可写 `lock_wheels`）；
+    foot+lock 启动/切回时 `enable_wheel_control(1)`；`lock_wheels_now()` 在每次
+    move_x 前发 `wheel_control([128,128,128,128])` 抱死；`switch_mode` 切回 foot 时
+    按 lock 保持 enable(1) 并立即锁轮；退出 finally 恢复 `enable_wheel_control(0)`
+    （防 2026-08-16 wheel 模式残留导致后续 move_x 失效）
+  - 机器 `follow_line_config.json`：新增 `lock_wheels: true`
+  - 本记录
+- 实施记录：复用 2026-08-16 实测结论"锁轮(128)+move_x 可用"；左后轮（通道3）硬件
+  故障不影响锁轮；wheel 模式差速不受影响（lock 只在 foot 生效）。
+- 验证：py_compile；既有 9 逻辑用例全 PASS（锁轮不影响雷达状态机）；已部署机器
+  （scp + 机器端 py_compile + JSON 合法）。
+- 遗留风险：锁轮不显著改善位移重复性（2026-08-16 实测）；enable(1)+move_x 组合若
+  实机 move_x 失效需回退 lock_wheels=false；退出恢复 enable(0) 已兜底残留。
+
+## 2026-09-01｜修复日志 f-string 崩溃：完成后 next_at '--' 应用 :.2f → ValueError
+
+- 状态：改动完成（已部署）
+- 目标：实机运行到两次转向序列完成后崩溃 "ValueError: Unknown format code 'f' for
+  object of type 'str'"（摄像头已停止）。
+- 影响文件：`follow_line.py` `check_rear_trigger`：step 完成检查提前到函数开头
+  （`_rear_turn_step >= len(...)` 直接短路返回 False）——process() 内调用无 step
+  前置条件，不提前返回会走到日志行；日志行 `next_at` 去掉三元表达式 '--'（开头
+  短路后不可能为 '--'）。
+- 实施记录：主循环调用有条件 `_rear_turn_step < len(...)` 保护，但 process() 里
+  `if self.check_rear_trigger():` 无保护，完成后仍调用 → 日志行 f-string 对字符串
+  '--' 应用 :.2f 崩溃；日志 0.3s 节流使测试首帧后不打日志，掩盖了该 bug（实机
+  持续运行 0.3s 后暴露）。
+- 验证：py_compile；9 逻辑用例全 PASS（新增"完成后调用不崩"回归用例：清零日志
+  节流强制打日志验证短路）；已部署机器。
+- 遗留风险：无。
+
+## 2026-09-01｜雷达后方 yaw 验证阈值 80° → 30°（80°实机达不到）
+
+- 状态：改动完成（已部署）
+- 目标：用户要求"30试试"——80° 实机弯道幅度仅 ~30°，第1次转向永不触发（无触发
+  行为）；降为 30°。
+- 影响文件：`follow_line.py` `DEFAULT_REAR_YAW_MIN_DEG 80→30`；机器
+  `follow_line_config.json` `rear_yaw_min_deg 80→30`；已 scp。
+- 验证：py_compile；机器端 py_compile + JSON 合法。
+- 遗留风险：30° 是否仍偏保守/足够防"刚转角就触发"，实机观察。
+
+## 2026-09-01｜巡线 crop 放宽到左右各剪 50px：[50,269]
+
+- 状态：改动完成（已改机器配置）
+- 目标：yaw 验证版乱跑——crop [60,259] 太窄导致弯道丢线循环、yaw 累积不到 80°
+  锁死第1次转向；用户决定放宽到左右各剪 50px。
+- 影响文件：机器 `follow_line_config.json` `crop [60,259] → [50,269]`；备份
+  `backups/follow_line_config.json.*`；本记录。
+- 验证：JSON 合法；须重启 follow_line 生效，重点观察日志"等 yaw"能否累积到 80°。
+
+## 2026-09-01｜雷达后方第1次转向序列加 yaw 验证：转过≥80°才允许触发
+
+- 状态：改动完成（已部署）
+- 目标：用户实机发现第1次转向序列在"刚到转角"就触发（rear≥0.75 条件在弯道入口即
+  满足），要求加 yaw 验证——至少转过 80° 再开启第1次。
+- 影响文件：
+  - `follow_line.py`：新增 `DEFAULT_REAR_YAW_MIN_DEG=80.0`（config 可写
+    `rear_yaw_min_deg`）；阶段1（dip）触发时记录 yaw 基准 `_rear_yaw0`；阶段2第1次
+    （step 0）触发前校验 |yaw-yaw0| ≥ rear_yaw_min_deg，未满足打"等 yaw"（0.5s 节流）、
+    满足打"yaw 验证通过"；第2次起不要求；yaw0 读取失败/缺失则不触发第1次（full exposure）
+  - 机器 `follow_line_config.json`：新增 `rear_yaw_min_deg: 80.0`
+  - `README.md`/`docs/launch-commands.md`/`docs/lingo.md`：文档同步
+  - `tmp/test_rear_trigger.py`：harness 支持 (rear, yaw) 序列 + dog.read_yaw mock
+- 实施记录：yaw 基准取阶段1识别瞬间（dip_done 置位时 read_yaw），后续车巡线过弯累积
+  转角；abs 判断方向不敏感。第2次（1.5m）在首次执行（右转90°→左转90°回正）之后，
+  车已过弯，不再要求 yaw。
+- 验证：py_compile；8 逻辑用例全 PASS（含"yaw 未转够阻止第1次/转够后触发"、
+  "yaw 始终不转够则不触发"）；已部署机器（scp + py_compile + JSON 合法）。
+- 遗留风险：yaw0 读取失败则第1次永不触发（报错可见）；80° 阈值实机可能需调
+  （0.5s 节流日志可见差多少）。
+
+## 2026-09-01｜雷达后方转向序列改为两次触发：rear 依次≥0.75m、≥1.5m
+
+- 状态：改动完成（已部署）
+- 目标：用户要求"两次：0.75 一次、1.5 一次"——转向序列执行两次，触发距离依次为
+  0.75m、1.5m（替代单次 0.75m）。
+- 影响文件：
+  - `follow_line.py`：`DEFAULT_REAR_TURN_AT_M` 单值 → `DEFAULT_REAR_TURN_AT_STEPS_M=[0.75, 1.5]`；
+    `_rear_turn_done` → `_rear_turn_step`（已执行次数/下一阈值索引）；阶段2按 steps
+    依次触发，全部完成不再触发；日志显示 step/next_at
+  - 机器 `follow_line_config.json`：`rear_turn_at_m` → `rear_turn_at_steps_m: [0.75, 1.5]`
+  - `README.md`/`docs/launch-commands.md`/`docs/lingo.md`：文档同步
+  - `tmp/test_rear_trigger.py`：6 用例（含两次触发场景）
+- 实施记录：每次触发执行完整转向序列（右转90°→停2s→左转90°回正），阻塞期间不轮询；
+  第一次（0.75）完成后车回正继续巡线，rear 再增大到 1.5 触发第二次。
+- 验证：py_compile + 6 逻辑用例全 PASS（缓慢下降两次触发、两次执行后停止、只触发一次等）；
+  已部署机器（scp + py_compile + JSON 合法）。
+- 遗留风险：dip 触发瞬间若 rear∈(0.75,1.0) 会立即第一次转向；0.75 与 1.5 之间若
+  rear 波动来回穿越，只按首次 ≥ 阈值触发一次（step 递增不回溯）。
+
+## 2026-09-01｜雷达后方转向触发距离 1.5m → 0.75m（rear_turn_at_m）
+
+- 状态：改动完成（已部署）
+- 目标：用户要求把阶段2转向触发距离 1.5m 改为 0.75m。
+- 影响文件：`follow_line.py` `DEFAULT_REAR_TURN_AT_M 1.5→0.75`；机器
+  `follow_line_config.json` 新增 `rear_turn_at_m: 0.75`；已 scp 至机器。
+- 实施记录：注意 0.75 < rear_dip_to_m(1.0)：若 dip 触发瞬间 rear∈(0.75,1.0) 会
+  立即满足阶段2（马上转向）；若 rear<0.75 则等增大到 0.75。
+- 验证：py_compile OK；机器 grep 0.75；JSON 合法。
+- 遗留风险：0.75 触发点较近，转向序列开始时机变早；实机看效果。
+
+## 2026-09-01｜巡线恢复最小线宽 25、crop 左右各剪 60px：[60,259]
+
+- 状态：改动完成（已改机器配置）
+- 目标：用户要求恢复最小线宽（50→25），裁剪加大到左右各 60px。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` `line_width [50,150] → [25,150]`、
+  `crop [40,279] → [60,259]`（有效宽 200px）；备份 `backups/follow_line_config.json.*`；
+  本记录。
+- 实施记录：crop 中心 (60+259)/2=159.5 不变，PID 目标不受影响。
+- 验证：JSON 合法；须重启 follow_line 生效。
+
+## 2026-09-01｜巡线 crop 左右各剪 40px：[40,279]
+
+- 状态：改动完成（已改机器配置）
+- 目标：用户实测后定：左右各裁剪 40px 避开旁边黑色。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` `crop [10,309] → [40,279]`
+  （有效宽 240px）；`line_width` 保持 [50,150]；备份 `backups/follow_line_config.json.*`；
+  本记录。
+- 实施记录：crop 中心 (40+279)/2=159.5 与 [10,309] 相同，PID 目标不变。
+- 验证：JSON 合法；须重启 follow_line 生效。
+
+## 2026-09-01｜巡线 crop 恢复左右裁剪 [10,309]（全宽误跟旁边黑色）
+
+- 状态：改动完成（已改机器配置）
+- 目标：全宽 [0,319] 实测把旁边的黑色物体误识别进视野，用户要求剪掉左右两边。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` `crop [0,319] → [10,309]`；
+  `line_width` 保持 [50,150]（上一条改动保留）；备份
+  `backups/follow_line_config.json.*`；本记录。
+- 验证：JSON 合法；须重启 follow_line 生效。
+- 遗留风险：裁剪回 [10,309] 后弯道丢线风险回到上上条水平；如仍误跟可现场用
+  follow_line_tune.py 的 z/x/c/v 调裁剪（q 保存）。
+
+## 2026-09-01｜巡线 line_width 下限 25→50（过滤弯道伪线）
+
+- 状态：改动完成（已改机器配置）
+- 目标：用户现场观察后判断丢线由小线宽目标误识别引起（弯道处 lw 41-47 抖动、正常
+  段 58-69），要求最小线宽改为 50 过滤伪线。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` `line_width [25,150] → [50,150]`；
+  备份 `backups/follow_line_config.json.*`；本记录。
+- 验证：JSON 合法；须重启 follow_line 生效，实机看弯道是否还丢线。
+- 遗留风险：下限 50 后正常线如果受光照变细（<50px）会被过滤成丢线；V=120 上限
+  阈值不变。
+
+## 2026-09-01｜巡线 crop 放宽到全宽 [0,319]（防弯道丢线）
+
+- 状态：改动完成（已改机器配置）
+- 目标：用户反馈第一个右转处弯道丢线（PID 跟不上、线跑出裁剪区），要求左右画面
+  全部放宽到最大。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` `crop [10,309] → [0,319]`；
+  本机代码默认值本就是 `DEFAULT_CROP=[0,319]` 无需改。备份
+  `backups/follow_line_config.json.20260901_005522`；本记录。
+- 实施记录：crop 中心 (0+319)/2=159.5 与 [10,309] 相同，PID 目标不变；8090 推流
+  显示未裁剪原图，crop 只影响检测区（8091 阈值画面可见）。
+- 验证：JSON 合法；须重启 follow_line 生效，实机看弯道是否还丢线。
+- 遗留风险：全宽后旁线/场地边更容易进视野误跟（08-31 放宽时的已知风险）。
+
+## 2026-09-01｜修复雷达桥 pkill 自匹配：容器内逻辑拆独立脚本
+
+- 状态：改动完成（已部署并实测）
+- 目标：run_main_flow2.sh 合并雷达桥后实机卡死在"starting rear lidar bridge"。
+- 影响文件：
+  - 新增 `robot_dog_follow_line/host/lidar_rear_bridge_inner.sh`（容器内执行：起
+    roscore/雷达/http；source ROS 环境时临时关 -u 防 nounset 报错）
+  - `robot_dog_follow_line/host/run_lidar_rear_bridge.sh`：改 docker exec 调内层
+    脚本（原 bash -lc 长字符串里 `pkill -f lidar_rear_range_http.py` 匹配 bash -lc
+    自身 argv 被杀）
+  - `docs/launch-commands.md` §2/§3.2 部署清单补 inner 脚本；mistakes 记录
+- 实施记录：拆独立脚本后 argv 只含脚本路径、脚本内容不进 argv，pkill -f 不再自匹配；
+  内层脚本 `set -u` 下 source setup.bash 报 `ROS_MASTER_URI: unbound variable`，改
+  source 时 set +u。
+- 验证：本机/机器 bash -n；实测 `run_lidar_rear_bridge.sh` 输出 bridge-ok +
+  `{"ok":true,"rear_m":0.104}`；二次运行幂等复用。
+- 遗留风险：无新增（雷达桥功能不变）。
+
+## 2026-09-01｜主流程2 合并雷达后方桥：一条指令跑带雷达定位的巡线
+
+- 状态：改动完成（已部署）
+- 目标：用户要求把雷达桥启动合并进主流程2，减少操作指令。
+- 影响文件：
+  - `robot_dog_follow_line/host/run_main_flow2.sh`：停服务后、启动巡线前自动
+    `bash run_lidar_rear_bridge.sh`（容器内 roscore+雷达+HTTP :8767）；新增
+    `RAICOM_REAR_BRIDGE` 环境变量覆盖；雷达桥失败（容器未起等）→ 脚本中止
+    （set -e，full exposure 不静默降级）
+  - `docs/launch-commands.md` §2、`docs/lingo.md`「主流程2」词条：文档同步
+- 实施记录：桥脚本幂等（已起则复用）；桥在停服务之后、巡线之前拉起；部署列表补
+  `run_lidar_rear_bridge.sh`；前置条件补"容器 ros-noetic 运行中"。
+- 验证：本机 `bash -n` 通过；已 scp 至机器 `/home/pi/oumax-xgo/`（md5 一致）。
+- 遗留风险：雷达桥依赖容器 ros-noetic 已启动；巡线退出后服务仍不自动恢复。
+
+## 2026-09-01｜雷达后方第一个右转定位：rear 突降开启功能，rear≥1.5m 右转90°→停2s→左转90°回正
+
+- 状态：改动完成（已部署）
+- 目标：用户新方案——主流程2（巡线）正常巡线中，第一次雷达后方距离从 >2m 变为
+  <1m 即"第一个右转"，开启功能；此后 rear 增大到 ≥1.5m 时右转 90°、停 2s、再
+  左转 90° 回正继续巡线。替代旧 armed（rear<2.8m）→ rising（rear≥3.0m）右转 90° 逻辑。
+- 影响文件：
+  - `robot_dog_follow_line/scripts/follow_line.py`：新参数
+    `rear_dip_from_m=2.0`/`rear_dip_to_m=1.0`/`rear_turn_at_m=1.5`/`rear_turn_deg=90`/
+    `rear_hold_s=2.0`/`rear_turn_speed=16`/`rear_turn_timeout=10`；`check_rear_trigger()`
+    重写为两阶段（阶段1 曾见 rear>2m 后首次 rear<1m 开启；阶段2 rear≥1.5m 执行转向
+    序列）；新增 `start_rear_turn_seq()`（IMU yaw 闭环右转90°→sleep 2s→左转90°回正）；
+    `follow_line_config.json` 可写入 5 个距离/时长参数（load/save 同步）
+  - `robot_dog_follow_line/README.md`、`docs/launch-commands.md` §3.2：文档同步
+  - `tmp/test_rear_trigger.py`（不入库）：mock 依赖的逻辑测试
+- 实施记录：阶段1 用"曾见 >2m + 首次 <1m"状态标志而非相邻帧比较（缓慢下降
+  2.5→1.8→0.8 时相邻帧比较会漏触发）；转向方向复用现有 yaw 闭环（speed 负=右转、
+  正=左转，|yaw delta|≥90° 停转，超时停转报错）。
+- 验证：py_compile 通过；`tmp/test_rear_trigger.py` 5 个逻辑用例全 PASS（缓慢下降
+  触发、起点贴墙不触发、触发后只执行一次、远后无突变不触发、触发未到 1.5 不执行）。
+  未实机。
+- 遗留风险：须 bridge 常开（:8767）；YDLIDAR 0° 前/180° 后约定若装反则 rear 扇区
+  实际测的是前方；起点后方须 >2m 且第一个右转处车尾须贴近障碍 <1m 才能开启；两段
+  90° 用同一 `rear_turn_speed` 绝对值（左转取正），实机方向反时需调正负号；转向
+  序列阻塞约 5-7s，期间不巡线。
+
+## 2026-08-31｜巡线再压低：translation z 10→0（p=0 保持）
+
+- 状态：改动完成（已部署）
+- 目标：用户问能否爬更低。
+- 影响文件：`follow_line.py`/`follow_line_tune.py`：`translation('z', 0)`；本记录。
+- 实施记录：xgomini 库 z 约按 ±19.5 映射，0 低于原抓球/巡线常用的 10；p 仍 0 前后等高。若还要更低可试负值（如 -5），过低可能蹭地/步态不稳。
+- 验证：py_compile + 机器 grep z=0；须重启 follow_line 实机看高度。
+
+## 2026-08-31｜巡线低趴前后等高：p=15→0，撤销单收后腿
+
+- 状态：改动完成（已部署）
+- 目标：用户澄清「后腿和前腿一样」——不是单收后小腿，而是前后一样高；先前误加 31/41=12/11。
+- 影响文件：`follow_line.py` `dog_init`：保持 `z=10`，`attitude p=15→0`（取消低头翘臀），删除 `motor(31/41)`；`follow_line_tune.py` 同步 p=0；本记录。
+- 验证：py_compile + 机器 grep 无 31/41、p=0；须重启看实机是否前后平齐。
+- 遗留风险：p=0 后相机俯视角度变浅，线可能变小/变远，必要时再微调 z 或轻量 p；步态仍可能改腿姿。
+
+## 2026-08-31｜巡线低趴时后小腿再收（31=12 / 41=11）【已由上条纠正】
+
+- 状态：改动完成（已被「前后等高 p=0」替代）
+- 目标：曾误读为单收后腿；用户本意是前后腿一样。
+- 影响文件：见上条。
+
+## 2026-08-31｜雷达后方触发距离 1.5m → 3.0m
+
+- 状态：改动完成（已部署）
+- 目标：用户要求后方定位右转改为 3m。
+- 影响文件：`follow_line.py` `DEFAULT_REAR_TRIGGER_M=3.0`；launch-commands；本记录。
+- 验证：机器 grep/py_compile；须重启 follow_line。armed 仍为 trigger-0.2=2.8m 以下。
+
+## 2026-08-31｜巡线弯道改雷达后方 1.5m 定位右转（替线宽突变）
+
+- 状态：改动完成（已部署；桥已实机拉起 /rear 有数）
+- 目标：用户要求改用雷达后方定位，后方距离 3.0m 处右转。
+- 影响文件：
+  - 新增 `robot_dog_navigation/scripts/lidar_rear_range_http.py`（/scan 正后±15° 中位距离 → HTTP :8767/rear）
+  - 新增 `robot_dog_follow_line/host/run_lidar_rear_bridge.sh`
+  - `follow_line.py`：`check_rear_trigger` rising≥3.0m → 原 IMU 闭环右转；默认关线宽突变；主循环每帧查后方
+  - CMakeLists 列入新脚本；launch-commands §3.2；本记录
+- 实施记录：触发=先 armed（rear&lt;1.3m）再 rear≥1.5m 一次；HTTP 失败打日志不装死。实机瞬时 rear≈4.46m（未贴后墙则不会 armed）。
+- 验证：容器 /scan 有数据；`curl /rear` 返回 ok+rear_m；follow_line py_compile；未整段复跑巡线转弯。
+- 遗留风险：须 bridge 常开；YDLIDAR 0° 前/180° 后约定若装反则扇区要改；起点须后方够近才能 armed；与全导航 bringup 同抢 /scan 时注意。
+
+## 2026-08-31｜巡线 crop 再大幅放宽 50,249 → 10,309
+
+- 状态：改动完成（已写机器配置）
+- 目标：用户要求再次大幅增加左右可见面积（弯道/丢线前多看两侧）。
+- 影响文件：机器 `follow_line_config.json`：`crop [50,249]`→`[10,309]`（有效宽 199→299，左右各+40，边留 10px）；本记录。
+- 验证：机器 json 已更新；须重启 follow_line。
+- 遗留风险：旁线/场地边更容易进视野误跟；若仍不够可再开到 `[0,319]` 全宽。
+
+## 2026-08-31｜line_width 上限 100→150（弯道粗块仍可跟踪+突变）
+
+- 状态：改动完成（已部署）
+- 目标：用户确认弯道 raw>100 会被过滤成丢线、突变检测走不到；要求上限提到 150。
+- 影响文件：`follow_line.py`/`follow_line_tune.py` 默认 `[5,150]`；机器配置 `line_width` 保持下限 25、上限 **150**；README 示例；本记录。
+- 验证：本机/机器 py_compile；json 确认 `[25,150]`；须重启 follow_line。
+- 遗留风险：上限放宽后大块杂物可能被当线，需实机看误跟；突变仍要 raw>95 连续 3 帧。
+
+## 2026-08-31｜巡线速度再降：直行 8→6、转向前进 6→4
+
+- 状态：改动完成（已部署）
+- 目标：用户要求速度降一点再试。
+- 影响文件：`follow_line.py` 默认常量；机器 `follow_line_config.json` 写入 `straight_speed=6`/`turn_move_speed=4`；本记录。
+- 验证：机器 py_compile + json cat；须重启 follow_line 生效。边走边调仍可用 `[`/`]`、`-`/`=`。
+- 遗留风险：过慢时弯道探测/闭环时长体感变长，按实机再调。
+
+## 2026-08-31｜巡线实时显示线宽（8090/8091 水印 + 终端 [线宽]）
+
+- 状态：改动完成（已部署）
+- 目标：用户要求实时显示线宽，便于对照突变阈值与丢线/弯道。
+- 影响文件：`follow_line.py`（推流水印 + 0.3s 日志；无轮廓时清零 best/raw）；README；本记录。
+- 实施记录：水印格式 `lw=<过滤后> raw=<突变用>/<surge_lw_thresh>`；8090 FOLLOW 行与 8091 MASK 行均带；终端 `logging.warning('[线宽] …')` 节流 0.3s。
+- 验证：ast + 机器 py_compile；scp 至 `/home/pi/oumax-xgo/follow_line.py`；未复跑。
+- 遗留风险：推流仍每 2 帧一次，线宽显示约半帧率；须重启 follow_line 生效。
+
+## 2026-08-31｜巡线 crop 左右放宽 70,229 → 50,249
+
+- 状态：改动完成（已写机器配置）
+- 目标：用户反馈丢线后仍不转弯，要求左右画面再打开一点（扩大可见线宽/弯道边缘）。
+- 影响文件：机器 `/home/pi/oumax-xgo/follow_line_config.json` 的 `crop`；本记录。
+- 实施记录：`[70,229]` → `[50,249]`（左右各 +20px，画面 320 宽）；其余 HSV/line_width 未改。需重启 follow_line 生效。
+- 验证：机器端 json 已更新并 cat 确认；未复跑巡线。
+- 遗留风险：裁宽后可能看到旁线；若仍不转需查探测日志（`[探测]`/`[丢线开始]`）而非只调 crop。
+
+## 2026-08-31｜巡线线宽突变阈值 75→95（防正常段 89px 误触发）
+
+- 状态：改动完成（已部署）
+- 目标：实机日志 `当前线宽 89px > 75px` 误触发弯道右转；用户要求阈值改 95。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`surge_lw_thresh=95`）、README；本记录。
+- 验证：ast/机器 py_compile 通过；scp 至 `/home/pi/oumax-xgo/follow_line.py`，grep 确认 95；未复跑巡线。
+- 遗留风险：真弯道线宽若 ≤95 会漏触发，需实机确认；阈值仍硬编码（未入 config）。
+
+## 2026-08-31｜四轮依次各转 7 秒诊断脚本
+
+- 状态：改动完成
+- 目标：用户要求写程序让轮子依次转 7 秒（单轮诊断顺序跑完四轮）。
+- 影响文件：`tmp/drive_wheels_sequential.py`；`docs/launch-commands.md` §7；`docs/lingo.md` 词条「轮子依次转」；本记录。
+- 实施记录：通道顺序 [左前,右前,右后,左后]，每轮 10Hz 刷新，默认 7s@1.2；主机名自动选手控地址（pi→127.0.0.1，开发机→192.168.137.157，`RAICOM_MANUAL_HOST` 可覆盖）；已 scp 到机器 `/home/pi/oumax-xgo/drive_wheels_sequential.py`。
+- 验证：本机/机器 py_compile 通过；开发机曾实跑：左前/右前/右后转、左后不转；用户在 pi 家目录误跑 `tmp/...` 已改文档为机器绝对路径。
+- 遗留风险：左后轮倾向硬件故障；勿在 `~` 下写仓库相对路径 `tmp/`。
+
+## 2026-09-01｜Cartographer 纯激光建图模式：enable_mapping:=true + odom_mode:=carto
+
+- 状态：改动完成（已部署实机，建图验证中）
+- 目标：用户要求“从零建图”——当前 carto 分支只支持定位（加载已有地图
+  + lidar_loc 全局匹配），无法用 Cartographer 建图；且原 carto 分支挂在
+  `<group unless="enable_mapping">` 下，enable_mapping:=true 时 cartographer
+  根本不启动。
+- 影响文件：`robot_dog_bringup/launch/robot_dog_main.launch`：①gmapping 分支
+  条件改为 `enable_mapping and odom_mode != 'carto'`（carto 建图时不用 gmapping）；
+  ②carto 分支从定位 group 移出为独立 group（`if odom_mode == 'carto'`，建图/
+  定位两用，注释说明两种模式）；③`odom_mode`/`use_amcl` arg 定义前移到
+  `enable_mapping` 之后（launch arg 顺序敏感，gmapping 分支先引用）；
+  `robot_dog_navigation/config/cartographer_2d.lua`（num_subdivisions
+  =10→1，见下）；`docs/launch-commands.md`（§5 新增 carto 建图/定位命令）；
+  本记录与 mistakes 记录。
+- 实施记录：新增组合 `enable_mapping:=true odom_mode:=carto` = 纯雷达从零建图：
+  无 map_server/lidar_loc/move_base，cartographer 全局 SLAM 自行发布 map→odom
+  与 /map 子图；遥控用 mapping_keyboard_teleop（发 cmd_vel → 桥 → 运动，需
+  enable_motion:=true）。
+- **num_subdivisions 实机坑（本次核心修复）**：ydlidar scan 无 per-point 时间
+  偏移，`num_subdivisions_per_laser_scan=10` 时 cartographer 报 subdivision
+  时间恒等（"previous subdivision time ... is not before current"）并忽略
+  大部分 scan → 建图停滞（/map 只有 ~1 帧的障碍点、无空闲）；设 0 会让
+  1.0.0 CHECK 崩溃（trajectory_options.cc:30 要求 >=1）。最终设 **1**（合法
+  最小值 = 整帧一段不细分，跨帧按 header.stamp 比较正常推进）→ 实测 subdivision
+  警告消失、/map 正常累积空闲/障碍。
+- 验证：XML 合法；roslaunch --nodes 五种组合节点集全对——定位 carto
+  （cartographer+imu_bridge+lidar_loc+map_server+move_base）、建图 carto
+  （cartographer+imu_bridge 仅）、建图 gmapping（slam_gmapping+simple_odom，
+  原行为保持）、定位 amcl（amcl+map_server+move_base+odom_from_amcl）、
+  定位 cmd_vel 默认（lidar_loc+map_server+move_base+simple_odom）。已部署实机
+  （launch 备份 .bak-20260901-cartomapping，sha256 一致）；实机建图验证：
+  num_subdivisions=1 后 /map 正常增长（空闲 19.6%、障碍 0.9%、未知 79.5%，
+  随时间扩展）；RViz 看不到地图为显示问题（map 色带空闲=黑色、黑背景不可见，
+  调亮背景 + Alpha 1.0 解决）。
+- 遗留风险：carto 建图实机效果（足式颠簸时纯激光建图质量、空闲概率收敛）
+  待用户遥控走完场地后评估；建图时 imu_bridge 仍需 8765（手动服务）；遥控
+  建图 enable_motion:=true 有运动风险，需净空场地；occupancy_grid_node 需
+  单独启动（cartographer_node 不发布 /map）；容器重建后 cartographer 编译
+  产物丢失风险仍存在。
+
+## 2026-09-01｜巡线运动参数（PID/速度/方向/模式/轮速）纳入配置文件自动保存
+
+- 状态：改动完成
+- 目标：用户反馈——巡线边走边调（P/D/直行速度/转向前进速度/方向/轮足式）
+  每次启动都回硬编码默认值，调好无法复用；要求与 HSV 阈值一样保存为下次
+  启动默认。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（启动读取全部参数 +
+  新增 `s` 键保存）、`follow_line_tune.py`（保存视觉参数时保留运动字段）、
+  `README.md`、本记录。
+- 实施记录：①`follow_line.py` 顶部新增 `DEFAULT_PID=[396,0,30]`/
+  `DEFAULT_STRAIGHT_SPEED=8`/`DEFAULT_TURN_MOVE_SPEED=6`/`DEFAULT_DIRECTION=1`/
+  `DEFAULT_MODE='foot'`/`DEFAULT_WHEEL_BASE=145` 常量；②`load_follow_line_hsv`
+  升级为 `load_follow_line_config`：返回完整 dict（视觉 + 运动字段），缺文件/
+  缺字段回默认（旧配置兼容）；③新增 `save_follow_line_config`：把当前参数
+  全部写回 `follow_line_config.json`（s 键调用）；④`LineDetect.__init__` 默认值
+  改引用常量，`dog_init()` 后统一应用配置，`mode=wheel` 时自动
+  `enable_wheel_control(1)`；⑤主循环新增 `s` 键保存 + 提示更新；⑥
+  `follow_line_tune.py` 的 `load_hsv` 返回运动字典、`save_hsv` 原样写回
+  （调视觉参数不覆盖运动参数）。
+- 验证：两个脚本 py_compile 通过；从源码提取函数做往返测试——①无配置回默认
+  运动参数；②保存→重载一致（含 wheel 模式/负方向/新 PID）；③旧配置（仅视觉
+  字段）运动字段回默认；④tune 改 V 上限后保存，运动字段保留。CRLF 行尾与原
+  文件一致（follow_line.py/README 原厂 CRLF，新增行同用 CRLF）。
+- 遗留风险：`s` 保存与 `Q` 保存日志两个快捷键易混淆（已更新提示文本）；
+  旧 `follow_line_config.json`（仅视觉字段）仍兼容（已实机验证）；wheel 模式
+  启动自动 enable_wheel_control(1)，切回 foot 由 m 键恢复 0。
+- 部署：已 scp 上传机器 `/home/pi/oumax-xgo/`（旧版备份为
+  `follow_line.py.bak-20260901-saveparams`、`follow_line_tune.py.bak-20260901-saveparams`），
+  chmod +x 恢复 755（scp 覆盖丢 x 教训）；机器端 py_compile 通过、sha256 与仓库
+  一致；实机验证新脚本读取现有旧配置：视觉字段保留、运动字段回默认。未启动巡线。
+
 ## 2026-09-01｜线宽突变右转 90° 改 IMU yaw 闭环（替代盲转固定时长）
 
 - 状态：改动完成

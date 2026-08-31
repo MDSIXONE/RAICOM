@@ -10,12 +10,14 @@
 | 机器IP / IP未变 | 机器狗当前 WiFi 下的 IP 与访问入口（192.168.137.157） | [#机器IP](#机器IP) |
 | 驱动左后轮转动 N 秒 | 对左后轮通道（索引 3）发送持续单轮轮控命令，并在时长结束后归零 | [#驱动左后轮转动-n-秒](#驱动左后轮转动-n-秒) |
 | 同时驱动 4 个轮子 | 四个轮子同时同速转动指定时长，用于验证四轮驱动/前进能力 | [#同时驱动-4-个轮子](#同时驱动-4-个轮子) |
+| 轮子依次转 / 四轮依次转 | 左前→右前→右后→左后各转 N 秒（默认 7s）的轮控诊断 | [#轮子依次转](#轮子依次转) |
 | 小臂减才是前伸 / 机械臂关节 | XGO mini3W 机械臂关节方向标定：51 爪、52 小臂（负=前伸）、53 大臂（正=前抬）；arm_polar 不可靠，用 motor 直控 | [#机械臂关节](#机械臂关节) |
 | 低趴 | 已确认的完整抓取准备姿态：车体低趴、后肢抬高与机械臂到位 | [#低趴](#低趴) |
 | 放球 | 抓球的逆操作：低趴后机械臂安全伸出（爪保持闭合持球）、张爪让球落下、再安全收臂 | [#机械臂关节](#机械臂关节) |
 | 抓完掉头放球 / 旋转180度 | 一键编排 `ball_grab_release.py`：抓球程序 → rotate.py 旋转 180° → 放球程序 | [#抓完掉头放球](#抓完掉头放球) |
 | 主流程 / 跑主流程 | 上电后全自动：定点巡航 5 点 → 抓球放球（导航与球编排全部容器内 catkin 执行） | [#主流程](#主流程) |
 | 主流程2 / 直接巡线 | 备选主流程：停占串口/相机的服务后直接进入黑线巡线（跳过导航） | [#主流程2](#主流程2) |
+| 第一个右转 / 雷达后方定位 | 巡线中第一次 rear 从>2m变<1m 判定第一个右转开启；rear 依次≥0.75m、≥1.5m 时各右转90°→停2s→左转90°回正继续巡线 | [#第一个右转雷达后方定位](#第一个右转雷达后方定位) |
 | 巡线 / 跑巡线 / 巡线（黑线） | 实机黑线跟随：厂商 `follow_line.py`（HSV 黑线 + PID），**启动由用户手动执行** | [#巡线](#巡线) |
 | 放 catkin / 代码存放地 | 本次比赛任务代码统一写入 `robot-src/catkin_ws/src/`（原厂程序不删、不入 catkin） | [#放-catkin](#放-catkin) |
 
@@ -72,6 +74,20 @@
   （2026-08-13 实测左后轮不转），须现场观察。
 - **权威来源**：`robot-src/host-services/oumax-xgo/manual_control_server.py`（`handle_wheel` 与
   `send_wheel_control`）、`docs/ai-records/mistakes/2026-08-13.md`、2026-08-13 四轮同驱实测。
+
+## 轮子依次转
+
+- **等价说法**：轮子依次转、四轮依次转、依次转 7 秒、让轮子一个一个转
+- **含义**：按左前→右前→右后→左后顺序，每轮单独轮控指定时长（默认 7 秒），用于逐轮诊断。
+- **前置条件**：机器已开机、场地净空可随时断电；`/health` 正常；`oumax-manual` 占串口。
+- **精确动作**：
+  1. 机器端（推荐）：`python3 /home/pi/oumax-xgo/drive_wheels_sequential.py`（默认每轮 7s、速度 1.2）。
+  2. 开发机仓库根：`python3 tmp/drive_wheels_sequential.py 7 1.2`。
+  3. 首次需部署：`scp tmp/drive_wheels_sequential.py pi@192.168.137.157:/home/pi/oumax-xgo/`。
+  4. 仅左后（开发机）：`python3 tmp/drive_left_rear_wheel.py 7 1.2`。
+  5. 现场目视每轮是否真转；结束确认零速。
+- **不是**：不是在 `pi` 家目录下跑 `tmp/...`（该路径只存在于开发机仓库）；不是四轮同时转；不是 foot 行走；ACK 不等于转动（左后通道 3 可能硬件失效）。
+- **权威来源**：`docs/launch-commands.md` §7、`tmp/drive_wheels_sequential.py`。
 
 ## 机械臂关节
 
@@ -219,20 +235,49 @@
 - **等价说法**：主流程2、直接巡线、开始任务后直接巡线、主流程跑不通直接巡线
 - **含义**：备选主流程一键脚本 `robot_dog_follow_line/host/run_main_flow2.sh`：
   开始任务后**跳过定点巡航导航**，自动完成"停占串口/相机的服务
-  （raicom-original-main + oumax-camera）→ 宿主机 xgovenv 前台运行巡线程序
-  `follow_line.py"（启动即 tracking 巡线，B 键退出）。主流程1（导航 5 点 →
-  抓球放球）行不通时使用。
-- **前置条件**：机器已开机连 WiFi（192.168.137.157）；场地铺好黑线；`follow_line.py`
-  与 `run_main_flow2.sh` 已部署 `/home/pi/oumax-xgo/`。
-- **精确动作**（**启动由用户手动执行，AI 不得自动启动**）：机器端
+  （raicom-original-main + oumax-camera）→ **自动拉起雷达后方桥**
+  （run_lidar_rear_bridge.sh，容器内 roscore+雷达+HTTP :8767）→ 宿主机
+  xgovenv 前台运行巡线程序 `follow_line.py"（启动即 tracking 巡线，带雷达后方
+  第一个右转定位，B 键退出）。主流程1（导航 5 点 → 抓球放球）行不通时使用。
+- **前置条件**：机器已开机连 WiFi（192.168.137.157）；场地铺好黑线；`follow_line.py`、
+  `run_main_flow2.sh`、`run_lidar_rear_bridge.sh` 已部署 `/home/pi/oumax-xgo/`；
+  容器 `ros-noetic` 运行中（雷达桥 docker exec 依赖）。
+- **精确动作**（**启动由用户手动执行，AI 不得自动启动**）：机器端一条指令
   `bash /home/pi/oumax-xgo/run_main_flow2.sh`；脚本前台运行，退出后不自动恢复
-  已停服务（与主流程1一致），后续需要再手动 `systemctl start`。解释器/脚本路径
-  可用环境变量 `RAICOM_XGO_PYTHON`、`RAICOM_FOLLOW_LINE` 覆盖。
+  已停服务（与主流程1一致），后续需要再手动 `systemctl start`。雷达桥失败（容器
+  未起等）→ 脚本中止（full exposure）。解释器/脚本路径可用环境变量
+  `RAICOM_XGO_PYTHON`、`RAICOM_FOLLOW_LINE`、`RAICOM_REAR_BRIDGE` 覆盖。
 - **不是**：不是定点巡航抓球放球（那是主流程1）；不是"停服务 + 跑巡线"之外
-  的编排（无导航、无抓球）；巡线参数仍是原厂默认未标定，2026-08-16 实机首跑
-  **乱走**，使用前须先完成巡线调参。
+  的编排（无导航、无抓球，雷达桥只是辅助定位转弯）；巡线参数仍是原厂默认未标定，
+  2026-08-16 实机首跑**乱走**，使用前须先完成巡线调参。
 - **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/host/run_main_flow2.sh`、
   `docs/ai-records/CHANGE_LOG.md`。启动命令见 `docs/launch-commands.md` §2。
+
+## 第一个右转（雷达后方定位）
+
+- **等价说法**：第一个右转、雷达后方0.75m/1.5m右转90度、转一次90度停2s再转回来、
+  rear 从2m变1m、雷达后方定位开启
+- **含义**：`follow_line.py` 巡线中的雷达后方定位功能（默认开启，替代旧
+  armed+rising 逻辑）：正常巡线中**第一次 rear 从 >2m 变为 <1m** 判定为
+  "第一个右转"并开启功能（只一次）；此后 rear **依次增大到 ≥0.75m、≥1.5m**
+  各执行一次转向序列：**右转 90° → 停 2s → 左转 90° 回正 → 继续巡线**（IMU yaw
+  闭环，全部完成不再触发）。**第1次触发前要求相对阶段1时刻 yaw 已转过 ≥80°**
+  （`rear_yaw_min_deg`，防刚转角就触发），第2次起不要求。
+- **前置条件**：雷达桥 `run_lidar_rear_bridge.sh` 常开（:8767 返回 rear_m）；
+  起点后方须 >2m；第一个右转处车尾须贴近障碍 <1m 才能开启。
+- **精确动作**：
+  1. 阶段1：`check_rear_trigger()` 曾见 rear>2.0m 后首次 rear<1.0m → 记录
+     此刻 yaw0，`_rear_dip_done=True` 打日志"第一个右转".
+  2. 阶段2：按 `rear_turn_at_steps_m` 依次（默认 [0.75, 1.5]）触发
+     `start_rear_turn_seq()` 右转90°（speed -16）→ sleep 2s → 左转90°
+     （speed +16）→ PID 重置继续巡线；**第1次前校验 |yaw-yaw0| ≥
+     rear_yaw_min_deg**（未满足打"等 yaw"，满足打"yaw 验证通过"）；每阈值一次。
+  3. 参数可写 `follow_line_config.json`：`rear_dip_from_m`/`rear_dip_to_m`/
+     `rear_turn_at_steps_m`/`rear_yaw_min_deg`/`rear_turn_deg`/`rear_hold_s`。
+- **不是**：不是旧 armed（rear<2.8m）→ rising（rear≥3.0m）右转90°；不是线宽突变
+  （默认关）；不是视觉拐角/丢线探测转弯；转向序列阻塞约 5-7s 期间不巡线。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/scripts/follow_line.py`
+  （`check_rear_trigger`/`start_rear_turn_seq`）、`docs/launch-commands.md` §3.2。
 
 ## 抓取准备姿态下的球像素基准
 

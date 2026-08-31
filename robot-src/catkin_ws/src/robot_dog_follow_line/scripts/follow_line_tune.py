@@ -39,7 +39,7 @@ SAMPLE_LOG = Path(__file__).resolve().parent / "line_samples.log"
 DEFAULT_LOWER = [0, 0, 0]
 DEFAULT_UPPER = [180, 255, 30]
 DEFAULT_CROP = [0, 319]  # 左右裁剪 [left_x, right_x]（保留区间，0~319），默认全宽
-DEFAULT_LINE_WIDTH = [5, 100]  # 线宽过滤 [min_px, max_px]：minAreaRect 短边
+DEFAULT_LINE_WIDTH = [5, 150]  # 线宽过滤 [min_px, max_px]：minAreaRect 短边；上限 150 给弯道粗块留余量
 PORT = 8090    # 带框原画面
 MASK_PORT = 8091  # 阈值（二值）画面
 
@@ -187,30 +187,48 @@ def restore_services():
                 )
 
 
+# 运动参数键（与 follow_line.py 的 save_follow_line_config 一致）：调参工具只调视觉参数，
+# 保存时原样保留这些运动字段（由 follow_line.py 边走边调按 s 写入），避免被本工具覆盖丢失。
+MOTION_KEYS = (
+    "pid", "straight_speed", "turn_move_speed", "direction", "mode", "wheel_base",
+)
+
+
 def load_hsv(path: Path):
-    """返回 (lower, upper, crop, line_width)；无配置/缺字段时用默认。"""
+    """返回 (lower, upper, crop, line_width, motion)；无配置/缺字段时用默认。
+
+    motion 为文件中的运动参数字典（缺失时为空 dict），供保存时原样写回。
+    """
+    motion = {}
     if not path.is_file():
         return (
             list(DEFAULT_LOWER), list(DEFAULT_UPPER),
             list(DEFAULT_CROP), list(DEFAULT_LINE_WIDTH),
+            motion,
         )
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
+    for key in MOTION_KEYS:
+        if key in data:
+            motion[key] = data[key]
     return (
         list(data["lower"]),
         list(data["upper"]),
         list(data.get("crop", DEFAULT_CROP)),
         list(data.get("line_width", DEFAULT_LINE_WIDTH)),
+        motion,
     )
 
 
-def save_hsv(path: Path, lower, upper, crop, line_width):
+def save_hsv(path: Path, lower, upper, crop, line_width, motion=None):
     payload = {
         "lower": [int(x) for x in lower],
         "upper": [int(x) for x in upper],
         "crop": [int(x) for x in crop],
         "line_width": [int(x) for x in line_width],
     }
+    if motion:
+        payload.update(motion)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
         f.write("\n")
@@ -403,8 +421,8 @@ def init_low_pose():
     dog.stop()
     dog.pace('normal')
     dog.gait_type("slow_trot")
-    dog.translation('z', 10)
-    dog.attitude('p', 15)
+    dog.translation('z', 0)
+    dog.attitude('p', 0)
     time.sleep(2)
     print("Low pose ready", flush=True)
     return dog
@@ -417,7 +435,7 @@ def main():
 
     dog = init_low_pose()
 
-    lower, upper, crop, line_width = load_hsv(CONFIG_PATH)
+    lower, upper, crop, line_width, motion = load_hsv(CONFIG_PATH)
     print_hsv(lower, upper, crop, line_width)
     print(
         "Keys: w/s Vmax+/-10, 1/2 Vmax+/-1, a/d Vmin+/-10, "
@@ -555,7 +573,7 @@ def main():
             httpd_orig.shutdown()
             httpd_mask.shutdown()
             if save_on_exit:
-                save_hsv(CONFIG_PATH, lower, upper, crop, line_width)
+                save_hsv(CONFIG_PATH, lower, upper, crop, line_width, motion)
             else:
                 print("Exit without saving", flush=True)
         finally:
