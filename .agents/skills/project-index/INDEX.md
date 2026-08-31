@@ -70,6 +70,7 @@ RAICOM/
 
 ## 关键入口
 
+- 启动命令速查（主流程1/2 + 全部调试程序，复制即用）：`docs/launch-commands.md`
 - 项目说明：`README.md`（含目录职责边界：机器代码只允许写入 `robot-src/catkin_ws/src/` 或 `robot-src/host-services/<device>/`，仿真代码写入 `wsl-simulation/src/`）
 - WSL 离线导航：`wsl-simulation/setup_offline_navigation.sh` → `wsl-simulation/start_offline_navigation.sh`
 - 机器 ROS 入口：`robot-src/catkin_ws/src/robot_dog_bringup/launch/robot_dog_main.launch`

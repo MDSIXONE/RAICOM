@@ -15,6 +15,7 @@
 | 放球 | 抓球的逆操作：低趴后机械臂安全伸出（爪保持闭合持球）、张爪让球落下、再安全收臂 | [#机械臂关节](#机械臂关节) |
 | 抓完掉头放球 / 旋转180度 | 一键编排 `ball_grab_release.py`：抓球程序 → rotate.py 旋转 180° → 放球程序 | [#抓完掉头放球](#抓完掉头放球) |
 | 主流程 / 跑主流程 | 上电后全自动：定点巡航 5 点 → 抓球放球（导航与球编排全部容器内 catkin 执行） | [#主流程](#主流程) |
+| 主流程2 / 直接巡线 | 备选主流程：停占串口/相机的服务后直接进入黑线巡线（跳过导航） | [#主流程2](#主流程2) |
 | 巡线 / 跑巡线 / 巡线（黑线） | 实机黑线跟随：厂商 `follow_line.py`（HSV 黑线 + PID），**启动由用户手动执行** | [#巡线](#巡线) |
 | 放 catkin / 代码存放地 | 本次比赛任务代码统一写入 `robot-src/catkin_ws/src/`（原厂程序不删、不入 catkin） | [#放-catkin](#放-catkin) |
 
@@ -197,6 +198,7 @@
   当前按地图已知区临时收缩为 `0.5,0.25,-0.575`，补扫地图右下角后恢复
   `0.5,1.65,-0.575`。
 - **权威来源**：`robot-src/catkin_ws/src/robot_dog_navigation/scripts/main_flow.py`。
+  启动命令见 `docs/launch-commands.md` §1。
 
 ## 巡线
 
@@ -210,7 +212,27 @@
   3. 观察日志：相机初始化成功 + 转向角/运动决策输出即正常；乱走/异常时 Ctrl-C 或 `kill <pid>` 停止。
   4. 停止后恢复：`sudo systemctl start raicom-original-main.service oumax-camera.service`。
 - **不是**：不是导航定点巡航（主流程）；不是抓球放球；HSV 掩码与 PID 阈值是原厂默认未标定；2026-08-16 实机首跑**乱走**（全程转向角 ≥8 饱和、未见直行段），需现场调参后再用。
-- **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/README.md`、2026-08-16 实机首跑记录（`docs/ai-records/CHANGE_LOG.md`）。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/README.md`、2026-08-16 实机首跑记录（`docs/ai-records/CHANGE_LOG.md`）。调试/启动见 `docs/launch-commands.md` §3。
+
+## 主流程2
+
+- **等价说法**：主流程2、直接巡线、开始任务后直接巡线、主流程跑不通直接巡线
+- **含义**：备选主流程一键脚本 `robot_dog_follow_line/host/run_main_flow2.sh`：
+  开始任务后**跳过定点巡航导航**，自动完成"停占串口/相机的服务
+  （raicom-original-main + oumax-camera）→ 宿主机 xgovenv 前台运行巡线程序
+  `follow_line.py"（启动即 tracking 巡线，B 键退出）。主流程1（导航 5 点 →
+  抓球放球）行不通时使用。
+- **前置条件**：机器已开机连 WiFi（192.168.137.157）；场地铺好黑线；`follow_line.py`
+  与 `run_main_flow2.sh` 已部署 `/home/pi/oumax-xgo/`。
+- **精确动作**（**启动由用户手动执行，AI 不得自动启动**）：机器端
+  `bash /home/pi/oumax-xgo/run_main_flow2.sh`；脚本前台运行，退出后不自动恢复
+  已停服务（与主流程1一致），后续需要再手动 `systemctl start`。解释器/脚本路径
+  可用环境变量 `RAICOM_XGO_PYTHON`、`RAICOM_FOLLOW_LINE` 覆盖。
+- **不是**：不是定点巡航抓球放球（那是主流程1）；不是"停服务 + 跑巡线"之外
+  的编排（无导航、无抓球）；巡线参数仍是原厂默认未标定，2026-08-16 实机首跑
+  **乱走**，使用前须先完成巡线调参。
+- **权威来源**：`robot-src/catkin_ws/src/robot_dog_follow_line/host/run_main_flow2.sh`、
+  `docs/ai-records/CHANGE_LOG.md`。启动命令见 `docs/launch-commands.md` §2。
 
 ## 抓取准备姿态下的球像素基准
 
