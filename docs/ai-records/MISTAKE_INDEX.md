@@ -10,6 +10,7 @@
 - WSLg 显示/共享内存：2026-08-08.md
 - 进程管理（pkill/重连/双实例）：2026-08-08.md、2026-08-14.md、2026-08-16.md、2026-08-17.md
 - 导航与代价地图边界：2026-08-08.md
+- LCD/SPI 并发死锁（spidev_ioctl D 状态、kill 无效需重启）：2026-08-30.md
 - 雷达滤波/遮挡标定：2026-08-08.md
 - WSL 网络 IP/跨机器联调：2026-08-08.md、2026-08-03.md
 - ROS 日志排障（__log/ANSI）：2026-08-08.md
@@ -171,3 +172,10 @@
 - ROS Noetic 官方 apt 无 arm64 cartographer 预编译包（需源码编译）
 - 脚本改版后漏部署真机/容器导致实机跑旧版（imu_bridge fetch failed: 'accel'）
 - cartographer_node 1.0.0 用 gflags 命令行参数不读 ROS param（launch 需用 node args）
+
+### 2026-08-30
+
+- LCD/SPI 并发死锁：调参工具只停 oumax-camera 没停 raicom-original-main，与原厂
+  main.py 抢 SPI，spidev_ioctl D 状态 kill 无效，只能重启机器
+- follow_line 丢线 bug：line_follow 返回 (0,0,0) 三元组使 process 的
+  len(circle)!=0 恒真、dog.stop() 死代码，丢线误判为"线在最左"转向+前进乱走

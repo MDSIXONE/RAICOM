@@ -1,5 +1,622 @@
 # 代码改动记录
 
+## 2026-09-01｜线宽突变右转 90° 改 IMU yaw 闭环（替代盲转固定时长）
+
+- 状态：改动完成
+- 目标：用户指出转角处机器狗走路摇晃导致看不到转角，盲转 90°（turn(-16)×4.2s
+  开环）不可靠——转多转少无反馈；先做最小改动：把 `start_surge_turn` 的盲转
+  改为读机载 IMU yaw 累积角（0x66 单轴，度）闭环，|yaw 变化|≥90° 即停转。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①新增
+  `turn_closed_loop(target_deg, speed, timeout_sec)`——以当前 yaw 为基准持续
+  turn(speed)，每 0.1s 读 yaw，|delta|≥目标即 turn(0) 停；读取失败/超时立即
+  停转返回 False（full exposure，不静默盲转）；②`start_surge_turn` 改为调用
+  闭环（原 `turn(-16) sleep 4.2s` 盲转删除）；③`__init__` 参数
+  `surge_turn_90=4.2` → `surge_turn_deg=90.0`/`surge_turn_speed=-16`/
+  `surge_turn_timeout=10.0`；新增 `import math`；README 行为要点同步；本记录。
+- 实施记录：闭环只用 yaw **相对变化**（累积角 delta 即转角，无需 wrap），避开
+  2026-08-15 教训（IMU 绝对 yaw 不能当坐标基准）；方向只由 speed 符号决定
+  （负=右转，同原盲转），用 |delta| 判断方向不敏感；read_yaw 为 0x66 单轴读
+  （0x65 批量读在该固件不可用，2026-08-17 已验证），手控服务 /imu 同源路径
+  已实机验证可用；巡线进程同进程持有 dog 实例，串口无跨进程竞争。
+- 验证：py_compile 通过；无 surge_turn_90 残留；工作区 CRLF 行尾与新增行一致
+  （原厂文件既为 CRLF，仓库 autocrlf=input 提交时转 LF，diff 全量行变化属
+  既有假象）；未部署实机、未实机验证。
+- 遗留风险：①turn 持续转向期间循环读 yaw（串口读）是否影响转向节奏、yaw
+  读数在足式转动时的延迟/跳变需实机确认（采样周期 0.1s，转弯末端有过冲风险，
+  必要时降速或提前停）；②`read_yaw` 若实机返回非 float（如 None/字符串）会
+  立即停转并报错——暴露而非盲转，符合设计；③超时 10s 是转不动/方向错时的
+  保护，实机若 turn(-16) 转 90° 需 >10s（原盲转 4.2s 标定，不太可能）需调大。
+
+## 2026-08-31｜线宽突变改绝对阈值：raw_line_w > 75px 连续 3 帧 → 右转 90°
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：用户按实机经验定参——线宽超过 75px 即判定突变（弯道），触发右转 90°
+  （不再用基线×5/3 相对阈值、不再逐格转）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`surge_ratio`
+  → `surge_lw_thresh=75`（绝对阈值，删除 EMA 基线）；`start_surge_turn` 改为
+  **阻塞一次转完 90°**（turn(-16) × surge_turn_90=4.2s，转完停 0.3s、PID 重置、
+  继续巡线）；删除 `surge_turn_step` 与主循环 surge 状态机分支（触发即阻塞完成）；
+  日志保留 lw/raw 显示；README 同步；本记录。
+- 验证：ast 通过（无 surge_turn_step/_lw_baseline/surge_ratio 残留）；部署后
+  机器端 py_compile 通过、sha256 一致（6f775432…）；未实机复测。
+- 遗留风险：75px 阈值需实机确认（正常段线宽 ~60-90px 可能与阈值重叠，若正常
+  段即超 75 会误触发）；surge_turn_90=4.2s 转角需标定；转 90° 后线不在视野时
+  由丢线探测兜底。
+
+## 2026-08-31｜新增线宽突变检测：线宽 > 基线×5/3 连续 3 帧 → 右转
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：弯道处线转横向/连通成块时线宽突变（minAreaRect 短边增大），作为
+  弯道信号：线宽超过基线线宽 5/3 且连续 3 帧 → 右转。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①`color_follow`
+  记录 `best_line_w`（过滤后线宽）与 `raw_line_w`（不过滤的全局最大轮廓短边，
+  突变检测用，不受 line_width 上限过滤影响）；②`LineDetect` 新增线宽突变
+  状态：`_lw_baseline`（EMA 基线，突变帧不污染）、`_lw_surge` 计数、
+  `_surge_active/_surge_step` 右转状态机；③`check_line_surge()` 跟踪帧调用
+  （raw_line_w > 基线×5/3 连续 3 帧 → `start_surge_turn()`）；④
+  `surge_turn_step()`：逐格右转（step_duration=1.167s、每格停 0.5s）直到
+  线宽恢复（≤基线×5/3）停止转弯继续巡线，限格未恢复则停；⑤主循环 surge
+  状态机优先于丢线探测；README 同步；本记录。
+- 实施记录：raw_line_w 不受 line_width=[25,100] 上限过滤影响（突变到 >100
+  的 L 形也能检测到）；触发后右转与丢线探测同参数（step_duration、probe_steps、
+  每格 0.5s 停）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （a92ccb2d…）；未实机复测。
+- 遗留风险：基线 EMA 初始值从首个跟踪帧开始，启动瞬间线宽突变可能误判；
+  线宽突变阈值 5/3 与连续帧数 3 需实机确认（场地多线时可能误触发）。
+
+## 2026-08-31｜探测去除 90° 概念：每格独立时长、见线即停、无弯道停留
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：用户指出——丢线右转探测已不需要 90° 上限与弯道确认后的停留。
+  ①`turn_duration`（90°总时长）删除，`step_duration` 独立定义 0.7s/格；
+  ②探测见线即停交回 PID（上轮已改），无限格时不再有"转完剩余 90°"；
+  ③`_finish_turn` 删除弯道确认后的 0.5s 停留（见线直接恢复巡线）；
+  ④日志/注释全面去除 90° 字样。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（__init__ 探测参数
+  step_duration=0.7/probe_steps=6、_finish_turn 简化、start_probe/probe_step
+  日志与注释更新）；README 同步；本记录。
+- 验证：ast 通过（无 90°/turn_duration 残留）；部署后机器端 py_compile
+  通过、sha256 一致（6a542afb…）；未实机复测。
+- 遗留风险：每格 0.7s 的实际转角未标定（探测 6 格总转角可能不足/超过弯道
+  需求）；限格数 6 是否够（弯道大时可能需更多格）待实机确认。
+
+## 2026-08-31｜探测见线即停：不再强制转完剩余 90°
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：用户两次质疑"为什么见到线会右转"——原设计"看到线=弯道确认→转完
+  剩余格数"反直觉，且线边缘闪烁时会把原线误当弯道转完 90°。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`probe_step`
+  看到线分支改为**立即停止转弯、交回 PID 对准线继续巡线**（不再转剩余格）；
+  仅未看到线时继续转格，6 格全无则丢线即停；README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （242bb180…）；未实机复测。
+- 遗留风险：弯道后线方向与狗朝向偏差大时靠 PID 逐步拉回（多帧转向），
+  若线在视野边缘脱离可能再丢线（届时由正常丢线流程处理）。
+
+## 2026-08-31｜确认保留弯道探测（丢线后右转继续巡线）
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：用户先要求移除弯道检测，随后确认**保留丢线后右转探测、继续巡线**。
+  恢复完整探测逻辑（含全部实机修复：抖动丢线 5 帧确认、每格 0.3s 稳定、
+  弯道确认后 0.5s 停留、90° 未见线放弃即停、冷却 5s 防死循环）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（恢复
+  start_probe/probe_step/_finish_turn、_lost_frame 计数、主循环探测分支与
+  冷却判断；与最新修复版本一致）；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （911ffe4b…）；未实机复测。
+
+## 2026-08-31｜修复"看到线后右转"：丢线抖动不再触发探测（连续 5 帧确认）
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"为什么看到线后会右转"——根因：线在 crop 边缘闪烁的**抖动丢线**
+  （日志大量 0.1-0.2s 丢线→恢复）也会启动探测，探测第一格右转 15° 后线被
+  转回视野 → 误判"弯道确认" → 强制右转 90°。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：新增
+  `_lost_frame` 连续丢线计数——process 丢线分支每帧 +1、恢复时清零；
+  主循环探测启动条件增加 `_lost_frame >= 5`（约 0.5s 确认真丢线）；
+  抖动丢线（1-2 帧恢复）自动恢复巡线，不触发探测；README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （f7544f16…）；未实机复测。
+- 遗留风险：5 帧确认窗口内真弯道若线消失快（<0.5s 完全离开）可能拖后探测
+  启动（无害，只是晚 0.3s）；抖动阈值可调。
+
+## 2026-08-31｜弯道确认后停留 0.5s + 线宽下限 20→25
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：①弯道转完看到线后停留更久（0.3→0.5s）让狗/画面完全稳定再进 PID；
+  ②线宽阈值下限 20→25（再滤细线）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`_finish_turn`
+  advance 路径 sleep 0.3→0.5s）；机器配置 `follow_line_config.json`
+  line_width [20,100]→[25,100]；README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （f1e1be92…）、配置已更新；未实机复测。
+
+## 2026-08-31｜移除弯道后直行推进：确认看到线时线已在视野内，推进导致丢线
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"见到线之后向前走了几步，导致直接丢线"——上一轮 `_finish_turn`
+  的直行推进 0.6s 是元凶：探测确认看到线时线已在视野内，推进反而把狗推过
+  弯道/推出线。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`_finish_turn`
+  移除 `move_x 0.6s` 推进段，弯道确认后仅 0.3s 画面稳定即恢复 PID 巡线
+  （advance=False 路径不变，直接停）；README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （354871ac…）；未实机复测。
+- 遗留风险：若转角偏差导致线不在视野（探测未确认而放弃）仍会停——届时
+  需标定 turn_duration 修正 90° 转角。
+
+## 2026-08-31｜弯道转弯后处理修复：稳定+直行推进+探测冷却
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"右转后等待时间太短，且丢线"——转弯完成立即进 PID，转角偏差/
+  画面未稳导致马上再丢线；且会陷入 丢线→探测→丢线 循环。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①探测每格
+  `turn(0)` 后加 0.3s 画面稳定再检测（防惯性残帧误判）；②`_finish_turn`
+  加 `advance` 参数——弯道确认路径：0.3s 稳定 + 直行推进 0.6s（把线带回
+  视野）再恢复 PID 巡线；90° 未见线放弃路径不推进直接停；③新增
+  `_probe_cooldown`（5s）：探测完成后冷却期内再丢线不重复探测（防死循环），
+  主循环启动探测加冷却判断；README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （1dbe88dd…）；未实机复测。
+- 遗留风险：直行推进 0.6s 若线仍不在视野（转弯角度偏差大）会再丢线并停
+  （冷却 5s 后仍停，需人工介入）；转弯角度实测偏差仍待标定 turn_duration。
+
+## 2026-08-31｜弯道最终方案：丢线后右转探测（每格见线确认，不依赖 cx/area）
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"拐角处不转"。日志（00:36 段）[弯道判定] recent_cx=[170,177,155,165,159,166]
+  over175=1/6——**宽线实机 cx 全程 ≤177，cx 类判据（均值/计数/单调）全部失效**
+  （用户"线很宽 cx 不漂移"的判断最终证实）。废弃 cx/area 判据。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：全新**探测式转弯**——
+  丢线后主循环启动 `start_probe()`（右转第一格 turn(-16)×step_duration），
+  之后每帧 `probe_step(frame)`：抓当前帧 `line_follow` 检测，**看到线 = 弯道确认**
+  （转完剩余格数），90° 内未见线 = 放弃（丢线即停）。90° 分 6 格（每格
+  turn_duration/6≈0.7s）。删除 `_lost_to_turn`/`_do_right_turn`/`_turning`；
+  主循环丢线分支接管探测（探测期间不推流/不响应按键，最长约 5s）；
+  README 同步；本记录。
+- 实施记录：探测用"事实确认"（转后见到线）替代一切图像判据——弯道（右转
+  15-30° 即可见拐过去的线）必然确认；出线/断线 90° 内无线则停。零误判
+  （不转错），零漏判（弯道必见线）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （9d00dba1…）；未实机复测。
+- 遗留风险：①step_duration 基于 turn_duration=4.2s 估算（turn(-16) 90°），
+  每格实际转角需实机确认（若每格≠15°，总转角由 step_duration×6 决定，仍
+  可整体按比例调 turn_duration）；②探测 5s 内不响应按键，紧急停止需等探测
+  结束或断电。
+
+## 2026-08-31｜弯道判定改帧数计数（相位无关）：丢线前 6 帧中 ≥3 帧 cx>175
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"第一次转第二次没转"。日志对比：第一次触发序列
+  `126,167,202,213`（均值高）；第二次 `100,163,205` 后丢线——刚左摆完再
+  右摆，**6 帧均值被左摆帧拉低 <175**。均值判据对摆动相位敏感。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`_lost_to_turn`
+  改为计数判据——丢线前最近 6 帧中 **≥3 帧 cx>175** 判定右弯道（右弯道丢线
+  前通常连续多帧偏右；蛇形末尾丢线仅 1-2 帧高值，如 170,173,170,180,175→1帧）；
+  判定时打印 `[弯道判定] recent_cx=[...] over=..` 便于现场定位；README 同步；
+  本记录。
+- 实施记录：帧数计数对相位不敏感（只要累计右偏帧够多，不要求连续或均值）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （0a9ac494…）；未实机复测。
+- 遗留风险：若实机仍临界（如 205,202,196,175,120,119 判 3 帧触发但实为蛇形），
+  可用新打印的 [弯道判定] 日志微调 turn_cx_thresh（175）或帧数（3）。
+
+## 2026-08-31｜弯道判定改"丢线时判定"：丢线前 cx 偏右 → 右转 90°
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"拐角没转"。日志（00:31 段）显示拐角处 cx 序列
+  `180→175→丢线`——**宽线时 cx 被大面积黑块平均、变化滞后，单调递增帧数
+  不足 4 步，在线判定无法触发**。弯道必然以丢线收场（线拐走），故把判定
+  移到丢线瞬间：用丢线前 cx 历史判断（均值>阈值 = 线此前已偏右 = 右弯道）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`_detect_turn`
+  （在线判定）替换为 `_lost_to_turn()`（丢线判定：最近 6 帧 cx 均值>
+  turn_cx_thresh）；process 检测到线时只记录 cx/area 历史（不再在线触发），
+  丢线分支先 `_lost_to_turn()` 判定——真则右转 90° 并继续巡线，否则
+  "丢线即停"；README 同步；本记录。
+- 实施记录：在线误触发（蛇形右摆）与拐角不触发（帧数不足）均被此方案规避
+  ——判定只看丢线时的 cx 历史均值，蛇形在线不丢线不触发，拐角丢线时
+  cx 必偏右。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （60dd9ef9…）；未实机复测。
+- 遗留风险：蛇形右摆顶点恰好出线的场景可能误判弯道（cx 高+丢线）；
+  若出现需调高 turn_cx_thresh 或加"丢线前 cx 持续偏右时间"条件。
+
+## 2026-08-31｜弯道误触发修复：加回 area 衰减条件（区分蛇形右摆与真弯道）
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"正常巡线时转弯了"——误触发。根因：单纯"cx 单调递增+>175"
+  判据在**蛇形右摆的上行段**同样满足（蛇形时 cx 也能单调递增并超过 175，
+  但线仍在画面中）；area 衰减才是弯道（线拐走、面积减少）与蛇形（面积
+  稳定）的本质区别。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`_detect_turn`
+  恢复双条件——cx 最近 6 帧递增步≥4 且末值>175，**且** area 近 5 帧均值
+  < 10 帧峰值×0.6（turn_area_ratio 恢复配置，采样数据弯道处 area 衰减至
+  0.30）；`_area_hist` 重新参与判定。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （ca3c67cd…）；未实机复测。
+- 遗留风险：area 阈值 0.6 若实机弯道衰减不够（线宽很大时拐角处 L 形连通
+  area 可能先增后减）可能需要微调；误触发是否消除待实机确认。
+
+## 2026-08-31｜弯道检测改为 cx 单调递增判据 + 转向速度上限降为 15（治蛇形）
+
+- 状态：改动完成（已部署，待实机复测）
+- 目标：实机"拐角处不转"。日志（V=120 配置下）显示 cx 序列
+  `180→127→166→191→174→111` 剧烈蛇形（每次转向过冲 30-60px）——旧弯道
+  判据（5 帧均值>170 + area 衰减）无法满足；且蛇形峰值 203 与弯道值重叠，
+  cx 阈值本身无法区分。
+- 根因：转向窗口改回 0.5s 后 M 型 turn_speed 上限仍 18，P=396 下每次全速
+  转向单次转角过大 → 过冲蛇形。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①弯道判定改
+  **最近 6 帧中 ≥4 步 cx 单调递增 且 当前 cx>175**（蛇形方向频繁反转、
+  递增步≤2 天然免疫；area 条件移除——实机动态不稳定）；参数化
+  turn_cx_thresh=175/turn_up_steps=4；②M 型 turn_speed 上限 18→15、
+  斜率 1.1→0.8（缓解蛇形过冲，死区 12 不变）；README 同步；本记录。
+- 实施记录：单调递增步数判据对"线宽 cx 变化慢"仍适用（无需大漂移，只需
+  同向不反转）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （436ed8d9…）；未实机复测。
+- 遗留风险：turn_cx_thresh=175 在蛇形改善后是否合适待实机确认；弯道触发
+  时机（过早/过晚）与 turn_duration 仍需现场标定。
+
+## 2026-08-31｜弯道检测实现：cx 单侧漂移 + area 衰减 → 右转 90°
+
+- 状态：改动完成（已部署；转弯时长 turn_duration=4.2s 为估算，待实机标定）
+- 目标：巡线路线上 90° 右转弯：自动检测并执行右转，避免弯道处丢线停止。
+- 采样标定：用户摆 9 个位置按 p 采样（line_samples.log）。数据结论：线实际
+  ~70-90px 宽（crop 内），**左右边缘条带恒为 0（线未及边缘）→ 否决"单侧条带
+  变空"方案**；弯道真实信号：正常段 cx≤156/area 稳定（5158-6924），弯道拐点处
+  cx=170+angle 偏离 90°，出口前 cx=194、**area 骤减至 0.30、ncont 1→2**。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：`color_follow` 记录
+  `best_area`；`LineDetect` 新增弯道状态（cx/area 双 deque×10、turn_cx_thresh=170、
+  turn_area_ratio=0.6、turn_duration=4.2、_turning 标志）；`_detect_turn()`（最近
+  5 帧 cx 均值>170 且 area 近帧<峰值×0.6，排除直线大偏移）+ `_do_right_turn()`
+  （turn(-16) sleep 4.2s turn(0)，足式一次一个动作）；process 检测到线时弯道
+  优先，丢线时清历史；README 同步；本记录。
+- 实施记录：直线大偏移（cx 高但 area 稳定）不会触发，真弯道 area 衰减才触发；
+  只右转（比赛弯道固定右侧）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致（dcf4e3f8…）；
+  未实机验证弯道触发与转弯角度。
+- 遗留风险：①turn_duration=4.2s 为 rotate 180°@turn15=9s 的比例估算，**90°
+  实际转角需实机标定**（跑一次看角度再调）；②turn_cx_thresh=170 临界于
+  采样位置 7（cx=170），实机如早触发/晚触发可微调；③误触发风险待实机确认
+  （直线大幅偏移但 area 短时波动的场景）。
+
+## 2026-08-30｜固化实机标定参数：P=396/D=30 + 配置补 line_width
+
+- 状态：改动完成（已部署验证）
+- 目标：用户实机确认"基本巡线"，固化最终参数，使主流程2/巡线开箱即用：
+  无需每次边跑边调。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`FollowLinePID`
+  默认 [1,0,0]→**[396.0, 0, 30.0]**）；机器与仓库配置
+  `follow_line_config.json`（lower=[0,0,20] upper=[180,255,140] crop=[80,219]
+  **补 line_width=[5,100]**）；README 同步；本记录。
+- 实施记录：参数来自 2026-08-30 23:34-23:38 实机日志稳定段（P 396、D 30±、
+  连续 turn=±12~18 纠偏、丢线均恢复）；spd=8/6、dir=+、foot 保持默认。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （17a7a64d…）、grep 确认默认值、json 已更新；未复跑（参数即用户实机
+  验证值）。
+- 遗留风险：灯光变化/场地不同时 V 阈值与 P 可能需再微调（边走边调键保留）。
+
+## 2026-08-30｜巡线日志诊断化：时间戳 + 丢线开始/恢复状态 + 输出值入日志
+
+- 状态：改动完成（已部署重验证，待实机复测）
+- 目标：运行结束后能从保存的日志（Q 键 → follow_line_log_1/2.log）立马读出
+  问题：偏左/右、实际输出（足式 turn 速度/轮式 L R）、丢线时刻与持续时长、
+  按键调整时间点。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①logging.basicConfig
+  加毫秒时间戳（`%(asctime)s.%(msecs)03d`）；②丢线改状态化日志——开始时打一次
+  `[丢线开始] mode/P/D/V/crop/lw/spd/dir` 全参数快照，恢复时打
+  `[恢复寻线] 丢线持续 X.Xs`（不再每帧刷屏）；③print_params 加 `HH:MM:SS` 前缀
+  （按键调整时间点）；④`log_bias` 已带 detail：足式 `直行/turn=16`、轮式
+  `L=145 R=135`；⑤M 型转向速度死区钳制 `max(12, min(1.1|z|,18))`；⑥轮式差速
+  放开 0~255（允许一侧后退）。README 同步；本记录。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （5bf8172b…/27aadcf1…）；未实机复测。
+- 遗留风险：丢线持续时无逐帧日志（有意为之，恢复时会给总时长）。
+
+## 2026-08-30｜巡线双路推流：8090 带框原画面 + 8091 阈值画面 + 偏差方向日志
+
+- 状态：代码完成（机器关机未部署，开机后部署）
+- 目标：①电脑同时看"阈值画面"与"带框原画面"（两个标签页并排）；
+  ②日志实时显示线偏左/偏右。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①StreamingServer
+  改为接收 output 参数（实例级，Handler 从 `self.server.output` 取），支持
+  多路流；新增 `MASK_PORT=8091`，双 server 线程；每帧推两路：8090 画框原图
+  （FOLLOW+mode 水印）、8091 二值掩码图（MASK V/crop 水印，binary 非 ndarray
+  时跳过）；finally 关两个 server。②`log_bias()`：节流 0.5s 打印
+  `[线偏左/偏右/居中] cx/中心 z_Pid mode`，execute 开头调用（foot/wheel 通用）；
+  README 同步；本记录。
+- 实施记录：承接上一轮"偏左偏右"需求（机器关机前未部署）；本轮一并完成。
+- 验证：ast 语法通过；未部署未实机。
+- 遗留风险：8091 端口在 oumax-camera 场景无冲突，但需确认无其他服务占用；
+  双路 imencode 增加少量 CPU。
+
+## 2026-08-30｜巡线推流到电脑 + 轮式/足式切换 + 足式"一次一个动作"转向修复
+
+- 状态：改动完成（已部署重验证，实机复测待用户）
+- 目标：①巡线画面实时传到电脑；②轮式/足式两种方式运行时切换；③用户实机
+  洞察"足式可能不能同时做两个动作"——查 xgolib 源码确认：`move_x` 发 VX、
+  `turn` 发 VYAW 寄存器，固件后发覆盖先发（`move_by` 只用 VX+VY 合成从不混
+  VYAW，`turn_by` 单独用 VYAW），原厂 turn+move_x 连发 = 转向被吞，实机表现为
+  只前进不转向（"方向怎么调都没用"的真凶）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①新增 8090 MJPEG
+  推流（StreamingOutput/Handler/Server，主循环 imencode 推画框图 + FOLLOW/mode
+  水印）；②`mode` 属性 foot/wheel，`m` 键切换（`enable_wheel_control(1/0)`），
+  `execute_wheel` 四通道差速（通道 [左前,右前,右后,左后]，128=停，base=145，
+  差速 clamp ±40），`stop_motion` 按模式停（wheel 发 128）；③足式转向分支改为
+  **先纯转向（turn+sleep runtime_x）→ turn(0) 停转 → 短前进（move_x 0.25s）→
+  stop**，一次只发一个运动指令；README 同步；本记录。
+- 实施记录：wheel_byte 语义参考 manual_control_server（128=停、>128 前进、
+  <128 后退）；轮式低趴姿态是否适用待实机确认。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致（610c9401…）；
+  未实机复测。
+- 遗留风险：足式转向+前进分步后节奏变"顿挫"，速度/时长按实机再调；轮式差速
+  方向与 base 速度待实机标定；推流与 oumax-camera 同用 8090（跑前须停相机服务）。
+
+## 2026-08-30｜巡线方向修复：PID 目标=裁剪窗中心 + t 键切换转向方向
+
+- 状态：改动完成（已部署重验证，实机复测待用户）
+- 目标：用户实机反馈"方向反了、P 怎么调都没用"。两个根因：①crop 不对称
+  （如 [80,219] 中心 149.5 ≠ 硬编码目标 160）→ 线在裁剪窗中心时误差恒为
+  ~10.5px，P 越大转向越猛、永远对不齐；②原厂 turn 符号语义未实机验证，
+  方向可能反（P 放大反向偏差，表现为调 P 无效）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：execute 目标点由
+  硬编码 160 改为 `(crop[0]+crop[1])/2`；新增 `self.direction`（默认 1）乘
+  z_Pid，`t` 键切换正负；print_params 显示 `dir=+/-`；启动提示加 t 键；
+  README 同步；本记录。
+- 实施记录：方向用运行时开关而非写死——实机一键验证，不用猜符号；
+  crop 中心修复消除固定偏差，P 调大即真正生效。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （c06bc815…）、grep 确认 crop_center/direction 就位；未实机复测。
+- 遗留风险：实机需按 t 确认方向（dir=+ 或 -）；crop 中心修复后 P 应立刻
+  有效，若仍无效需重新调参。
+
+## 2026-08-30｜丢线行为改"丢线即停、看到再寻"（替代原地转圈）
+
+- 状态：改动完成（已部署重验证，实机复测待用户）
+- 目标：用户指令：丢线就停（`dog.stop()`），重新看到线后自动恢复巡线；
+  不再原地转圈（转圈 + 慢速锁线实机仍难恢复）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（丢线分支：打印
+  `未检测到线条，停止` + `dog.stop()`，保留 `PID_controller.timeOfLastCall=None`
+  重见线全新启动）；README 行为要点同步；本记录。
+- 实施记录：承接上一轮修复（PID 长空档 >0.5s 重置 + 丢线时 timeOfLastCall=None，
+  保证重见线第一帧不污染）；本轮仅把转圈指令换成 stop。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致（8e4d6096…）、
+  grep 确认无"原地转圈"残留；未实机复测。
+- 遗留风险：丢线停止后若线在视野外，狗原地等待不找（用户可手动摆正或把狗
+  移到线上即自动恢复）。
+
+## 2026-08-30｜巡线实机修复：退出时停狗 + PID 默认 P=1/D=0
+
+- 状态：改动完成（已部署重验证，实机复测待用户）
+- 目标：用户实机反馈：①摄像头停了机器还在运动——move_x/turn 是持续指令，
+  退出路径（Ctrl-C）未显式停狗，最后一条运动指令继续执行；②D 默认从 0 开始、
+  P 默认从 1 开始。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：finally 清理开头加
+  `line_detect.dog.stop()`（在 picam2.stop 之前，先停运动再停相机）；默认
+  `FollowLinePID = [1.0, 0, 0.0]`（原 [50,0,30]）；README 同步；本记录。
+- 实施记录：B 键路径本有 cancel()→dog.reset()，Ctrl-C 路径此前无停狗；
+  现 finally 统一 stop()（reset 有摆位动作，stop 只停运动）。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （b5fe985b…）、grep 确认默认值与 dog.stop 就位；未实机复测。
+- 遗留风险：P=1（Kp=0.001）起步极弱，实机需长按 p 快速加到有效值。
+
+## 2026-08-30｜巡线边走边调细粒度化：P±1/D±0.1、速度默认再降且步进±1
+
+- 状态：改动完成（已部署重验证，实机复测待用户）
+- 目标：用户反馈速度仍快、P/D 步进（±50/±10）太粗。改为：P `p`/`o` 步进 **1**、
+  D `i`/`u` 步进 **0.1**；速度实时调整保留且默认再降（直行 8、转向 6），
+  `[`/`]`、`-`/`=` 步进 ±1。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（FollowLinePID 改
+  float list [50.0,0,30.0]；按键步进重设；速度默认 8/6；print_params 用
+  `:.1f` 格式化；启动提示同步）；README 同步；本记录。
+- 实施记录：D 用 round(x,1) 防浮点累积误差；P 按 1 步进从 50 提到 300 需
+  250 次按键，raw 模式长按触发键盘 repeat 可连续累加。
+- 验证：ast 通过；部署（机器重启后）py_compile 通过、sha256 一致
+  （930e060c…）；未实机复测。
+- 遗留风险：P 目标 300+ 需实机长按或多次按键达到；速度 8/6 是否合适待实测。
+
+## 2026-08-30｜巡线实机问题修复：退出卡死（atexit close）+ 速度太快（降速并可调）
+
+- 状态：改动完成（已部署重验证；实机复测待用户）
+- 目标：用户实机首跑反馈两点：①Ctrl-C 退出卡死——`摄像头已停止` 打印后进程不
+  退，二次 Ctrl-C 打断解释器 atexit 阶段的 `picamera2.close()`（join 预览线程）
+  报 "Exception ignored in atexit callback: ... stop_preview ... KeyboardInterrupt"；
+  ②速度太快——M 型实机转向角 70~90 时 `turn(18)+move_x(15)` 过快（用户 `sudo
+  reboot` 强退）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`：①finally 清理在
+  `picam2.stop()` 前 `signal.signal(SIGINT, SIG_IGN)` 且**不恢复**（atexit 回调
+  期间 Ctrl-C 不再打断 close）；②新增 `straight_speed`（默认 10，原 18）与
+  `turn_move_speed`（默认 8，原 15）属性，execute 改用属性；边走边调新增
+  `[`/`]` 直行速度 ±2、`-`/`=` 转向速度 ±2，print 显示 `spd`；README 同步；
+  本记录。
+- 实施记录：SIGINT 免疫不恢复是为了覆盖解释器退出阶段的 atexit 回调（tune 中
+  恢复 old_handler 的做法对 picamera2.close 不够）；速度上限钳到 30。
+- 验证：ast 通过；机器重启后部署，py_compile 通过、sha256 一致
+  （60803f05…）；main.py 服务正常（Ssl do_wait，SPI 正常）；未实机复测。
+- 遗留风险：速度目标值（直行 10/转向 8）按实机再微调；退出仍有 1-2s 的
+  picamera2 close 等待属正常。
+
+## 2026-08-30｜巡线"边走边调"：SSH 单键实时调 PID，解决原厂 Kp 极弱不纠偏
+
+- 状态：改动完成（已部署重验证，实机边走边调待用户）
+- 目标：用户调好 HSV/裁剪后询问"宽线会怎么走"——推演发现原厂 PID 参数
+  P=50（Kp=0.05）+ 直行阈值 8 = 160px 偏差，**画面 320px 内 z_pid 恒 <8 全部判
+  直行**，转向只在线完全出画面（cx≤0）时触发；宽线时黑块圆心恒贴画面中心
+  （z_pid≈0）恒定直行冲出场地（8-16 乱走与此吻合）。用户选择"边走边调"。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`FollowLinePID`
+  元组→list；主循环加 SSH 键盘 raw 单键监听：`p`/`o` P 增益±50、`i`/`u` D±10、
+  Ctrl-C 退出，改后 `PID_init()` 重建控制器即时生效并打印 P/D/V/crop；
+  stdin raw、stdout 保持，B 键退出逻辑不变）；README 行为要点同步；本记录。
+- 实施记录：raw 只设置 stdin（tty.setraw(sys.stdin)），stdout 的 ONLCR 保留，
+  终端 print 正常换行；`PID_init` 重建时积分器清零，调参即时生效。
+- 验证：ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （ed3a5170…）；未实机（待用户重启后跑主流程2/巡线现场按 p 调 P）。
+- 遗留风险：实机 P 目标值约 300（偏差 27px 即转向）需按场地实测；
+  边跑边调时注意狗的运动安全。
+
+## 2026-08-30｜SPI 死锁根治：调参/YOLO 工具移除 LCD，改用浏览器 8090 推流
+
+- 状态：改动完成（已部署重验证；机器当前 SPI 死锁需重启清除）
+- 目标：第二次实机复现 SPI 死锁（tune 第二次运行零输出挂死、Ctrl-C 无效，进程卡
+  `spidev_ioctl`，与 main.py 同占 /dev/spidev0.0）。根因：本工具虽已停
+  raicom-original-main，但该服务 `Restart=on-failure`——原厂 main.py 一旦卡 SPI
+  使 systemctl stop 超时被判 failed，服务自动重启，又与工具 LCD 初始化抢 SPI，
+  循环死锁。根治：**调参/YOLO 工具彻底移除 xgoscreen LCD（不再碰 SPI）**，画面
+  全走 8090 浏览器推流（用户本就是远程看）；调参工具保留低趴姿态（需串口，仍停
+  raicom-original-main）；yolo_view 不碰串口/SPI，只停 oumax-camera。
+- 影响文件：`follow_line_tune.py`（删 LCD import/初始化/显示；`stop_services`
+  停服务后新增 `_wait_inactive` 轮询验证，防 Restart=on-failure 竞态拉起；finally
+  清理期间 `signal.SIGINT→SIG_IGN` 免疫，防二次 Ctrl-C 打断 dog.reset/httpd.shutdown
+  导致清理不完整+traceback）；`yolo_view.py`（删 LCD；SERVICES 减为只停
+  oumax-camera；加 _wait_inactive 与 SIGINT 免疫）；README 调参章节同步；本记录。
+- 实施记录：死锁诊断链：第二次运行无输出 + Ctrl-C 无效 → ps 见进程 D 状态
+  spidev_ioctl → fuser 确认 main.py 与 tune 同占 /dev/spidev0.0 → 确认
+  raicom-original-main.service Restart=on-failure 是自动重启来源 → 移除 SPI 依赖。
+- 验证：本机 ast 通过；部署后机器端 py_compile 通过、sha256 一致
+  （2b99ce2c…/80c90b59…）、grep 确认无 LCD 代码残留；**机器当前仍有死锁进程
+  （main.py + tune 卡 SPI），需用户重启机器后生效**。
+- 遗留风险：重启后跑 tune 验证无 SPI 冲突；后续任何新工具不得初始化 xgoscreen
+  LCD（除非先禁用 raicom-original-main 的 on-failure 重启并验证独占 SPI）。
+
+## 2026-08-30｜调参工具摆低趴姿态：画面与正式巡线视角一致
+
+- 状态：改动完成（已部署重验证，实机确认待用户）
+- 目标：用户运行调参工具验证低趴姿态；原调参工具不初始化 XGO（画面是当前站立
+  视角，与正式巡线低趴视角不一致）。改为调参时摆巡线同款低趴姿态（z=10/p=15），
+  退出 `dog.reset()` 复位站立。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line_tune.py`（import xgolib.XGO；
+  新增 `init_low_pose()`：固件识别机型（M→xgomini）后 stop/pace/gait_type/
+  translation z=10/attitude p=15，与 follow_line.dog_init 一致；main 在停服务、
+  端口检查后调用，finally 中 `dog.reset()` 复位）；README 调参工具章节同步；
+  本记录。
+- 实施记录：姿态设置在 `stop_services()` 之后（串口已释放）、相机初始化之前；
+  狗只有站立→趴下的摆位动作，无行走；退出复位后再由 atexit 恢复服务。
+- 验证：ast 语法通过；部署后机器端 py_compile 通过、sha256 一致
+  （37acfda3…）；未实机运行（待用户跑 `./follow_line_tune.py` 确认趴下姿态）。
+- 遗留风险：实机首跑确认低趴摆位正常（用户当前指令即为此验证）；调参期间狗
+  趴着不动，注意别在狗身上放东西。
+
+## 2026-08-30｜巡线加左右裁剪（多线场地防误跟）+ 默认低趴姿态
+
+- 状态：改动完成（已部署重验证，实机调参/巡线待用户）
+- 目标：①场地三条线，单独巡线会跟到旁边的线——给视觉处理加左右裁剪（ROI 置零），
+  只保留中间区间，并在调参工具中可实时调整裁剪；②站立姿态视角太远，默认姿态
+  改为夹球趴下姿态（与抓球接近姿态一致）。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`load_follow_line_hsv`
+  返回新增 crop `[left_x, right_x]` 绝对像素区间，默认 `[0,319]` 全宽；`color_follow`
+  增加 crop 属性；`line_follow` 清空上半后对 crop 区间外置零，坐标体系不变；
+  `dog_init` 默认 `translation('z', 10)` 低趴，原 z=75 站立）；
+  `follow_line_tune.py`（配置读写加 crop、`make_mask` 应用裁剪、画面显示 CROP 值并
+  在原图画紫线裁剪边界、按键 `z/x` 左边界±10、`c/v` 右边界±10、`clamp_crop` 保证
+  至少 10px 保留）；`robot_dog_follow_line/README.md`（行为要点补裁剪与低趴姿态、
+  新增"阈值与裁剪配置"与"调参工具"章节）；本记录。
+- 实施记录：crop 用绝对像素坐标（0~319），默认全宽零行为变化；裁剪在 HSV 转换
+  前置零（与清空上半同一 img 副本），轮廓/坐标不受影响；调参工具 `q` 保存时
+  连同 crop 写入 `follow_line_config.json`，正式巡线启动读取即生效。
+- 验证：本机 ast 语法通过、无 CRLF；部署后机器端 py_compile 通过、sha256 与本地
+  一致（504a705d…/60751fa4…）；未实机调参/巡线（待用户在场）。
+- 遗留风险：低趴姿态（z=10）实际巡航中是否影响步态/速度需实机确认；裁剪边界
+  具体值需现场按三线间距调整。
+
+## 2026-08-30｜修复调参/YOLO 工具 SPI 死锁：停服务补 raicom-original-main
+
+- 状态：改动完成（已部署重验证，实机运行验证待用户）
+- 目标：follow_line_tune.py 实机首跑卡死——进程 D 状态 `spidev_ioctl`，8090 一直
+  是 oumax-camera 原始流；根因是工具只停了相机服务，`LCD_2inch()` 初始化与原厂
+  main.py（raicom-original-main.service 常驻刷新 LCD）**并发抢 SPI 总线导致控制器
+  挂起**，双进程 ioctl 永不返回，kill -9 无效，只能重启机器恢复。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line_tune.py`、
+  `robot_dog_ball_grab/scripts/yolo_view.py`（原 `stop_oumax_camera`/`start_oumax_camera`
+  改为 `stop_services`/`restore_services`：同时停/恢复 `raicom-original-main` +
+  `oumax-camera`，记录启动前 active 状态、退出按原状还原；tune 保留用户新增的
+  `assert_port_free` 端口检查与 TUNE 水印）；`docs/ai-records/mistakes/2026-08-30.md`
+  （新）；`MISTAKE_INDEX.md`（新条目）；本记录。
+- 实施记录：诊断链：8090 显示原画面 → `ps` 见 tune 进程 D 状态 → `/proc/stack`
+  定位 `spidev_ioctl` → `fuser /dev/spidev0.0` 发现原厂 main.py（907）与 tune
+  同占 SPI → 停 raicom-original-main 时 systemd stop 超时（907 已卡死）→ 用户
+  重启机器恢复 → 两个工具补停 raicom-original-main 后重新部署。
+- 验证：机器重启后两服务正常；部署文件 LF/可执行/py_compile/ssh sha256 与本地
+  一致（c47e7c7c…/a974da79…）；未实机跑工具（待用户在场）。
+- 遗留风险：SPI 死锁是否只在并发时触发（单进程独占 SPI 正常），本次重启后
+  未实测工具运行；若复现需评估 SPI 独占锁或禁用 LCD 分支。
+
+## 2026-08-30｜修复 follow_line 丢线 bug：原地转圈寻找（只转不走）
+
+- 状态：改动完成（未部署、未实机验证）
+- 目标：原厂 follow_line.py 丢线时不会停止——`line_follow()` 未检测到线时返回
+  `(0,0,0)` 三元组，`process()` 的 `len(self.circle) != 0` 恒真，`dog.stop()` 分支
+  是死代码；丢线被误判为"线在最左侧 x=0"，PID 满偏转 → `turn()` + `move_x(15)`
+  前进转向，I 项累计越转越猛（疑为 2026-08-16 实机乱走主因之一）。按用户决策
+  改为：丢线时**原地转圈寻找、不前进**。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（`line_follow` 无检测
+  返回 None、`__init__` circle 初值 None、`process` 改判 `is not None`，丢线分支
+  `dog.turn(50 if L else 18)` 只转不走）；`robot_dog_follow_line/README.md`
+  （脚本行为要点同步：丢线 = 原地转圈寻找）；本记录。
+- 实施记录：改动 4 处共约 10 行；有检测路径与 PID/execute 逻辑零改动。
+- 验证：本机 ast 语法检查通过；未部署、未实机。
+- 遗留风险：持续丢线（如线被完全遮挡）会一直原地转圈直至重新见线或人工干预；
+  重见线首帧 PID 积分残留可能有一次大转向（随后收敛）。
+
+## 2026-08-30｜follow_line_tune 合成流强化标识（防误连原厂 8090）
+
+- 状态：改动完成
+- 目标：实机浏览器见整幅彩色无字——实为仍在看 oumax-camera 原厂流；强化分屏标识，
+  停相机后检测 8090 仍占用则硬失败。
+- 影响文件：`follow_line_tune.py`；本记录。
+- 实施记录：画面加大号 `TUNE`、红白掩码下半、分隔线；首页标题标明 follow_line_tune；
+  `assert_port_free` + bind 失败抛错；停服务后 sleep 0.5s。
+- 验证：本机未实机；需 scp 后看首页是否有 "NOT oumax-camera" 字样。
+- 遗留风险：旧浏览器标签可能缓存旧 multipart，建议硬刷新或开新标签。
+
+## 2026-08-30｜follow_line_tune shebang 改为 xgovenv
+
+- 状态：改动完成
+- 目标：实机 `./follow_line_tune.py` 用系统 python3 报 `No module named 'xgoscreen'`，
+  改为 shebang 直指厂商 xgovenv。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line_tune.py`；本记录。
+- 实施记录：shebang `#!/usr/bin/env python3` → `/home/pi/RaspberryPi-CM5/xgovenv/bin/python`。
+- 验证：未再实机跑；需重新 scp 后验证。
+- 遗留风险：yolo_view 仍可能需 ballenv（含 onnxruntime），与调参工具运行时不同。
+
+## 2026-08-30｜巡线 HSV 调参工具 + YOLO 检查工具 + follow_line 读配置
+
+- 状态：改动完成
+- 目标：本机编写巡线阈值调参与 YOLO 框检查工具，并使 follow_line.py 启动时读取同目录
+  follow_line_config.json（无配置则原厂默认）；暂不部署。
+- 影响文件：`robot_dog_follow_line/scripts/follow_line.py`（掩码改实例属性 + 读 JSON）；
+  新增 `follow_line_tune.py`、`robot_dog_ball_grab/scripts/yolo_view.py`；两包
+  `CMakeLists.txt`（列入 catkin_install_python）；本记录。
+- 实施记录：①`color_follow` 增加 `lower_black`/`upper_black`，`line_follow` 从实例属性
+  读掩码（原 `hsv_msg` 形参仍保留未用）；启动加载同目录 JSON，缺省打印提示并保持
+  `[0,0,0]`~`[180,255,30]`。②`follow_line_tune.py`：停/atexit 恢复 oumax-camera、
+  Picamera2 320×240、视觉与 line_follow 一致、LCD 上下分屏+阈值字、OpenCV JPEG
+  自推 8090、SSH 键调 V、q 保存配置。③`yolo_view.py`：默认 letters.onnx（A/B/C/D），
+  复用 letterbox/blob/NMS 并画全部框，2× 推流 + LCD，s 存图；两工具均不初始化 XGO。
+- 验证：本机 `python -m py_compile` 三脚本通过；未部署、未实机、未浏览器验证 8090。
+- 遗留风险：实机首跑需确认免密 sudo 停/启相机服务与 8090 可达；调参后需把
+  `follow_line_config.json` 与脚本同目录部署才能让正式巡线生效。
+
+## 2026-08-30｜新增主流程2：开始任务后直接巡线（备选主流程）
+
+- 状态：代码完成（未部署、未实机验证）
+- 目标：按用户要求为主流程1（导航 5 点 → 抓球放球）提供备选方案——主流程1
+  行不通时，机器端一键"停占串口/相机的服务 → 直接进入黑线巡线"，跳过定点巡航导航。
+- 影响文件：新增 `robot-src/catkin_ws/src/robot_dog_follow_line/host/run_main_flow2.sh`
+  （一键编排：`systemctl stop raicom-original-main + oumax-camera` → 宿主机 xgovenv
+  前台运行 `/home/pi/oumax-xgo/follow_line.py`，路径可用 `RAICOM_XGO_PYTHON`/
+  `RAICOM_FOLLOW_LINE` 环境变量覆盖；退出后不自动恢复服务，与主流程1一致）；
+  `robot_dog_follow_line/README.md`（新增"主流程2"小节：部署与运行命令）；
+  `docs/lingo.md`（新增「主流程2」词条 + 高频索引行）；本记录。
+- 实施记录：follow_line.py 为原厂示例**零改动**（HSV 黑线 + PID，启动即 tracking
+  巡线）；主流程2 不跑容器（容器 ros-noetic 未直通 /dev/ttyAMA0，串口需宿主机
+  权限），沿用 2026-08-16 实机验证过的宿主机 xgovenv 直跑路径；编排脚本风格参照
+  `run_ball_in_docker.sh`/`run_main_flow_in_docker.sh`（只停不恢复）。
+- 验证：脚本 `bash -n` 语法检查通过；未部署真机、未实机运行。
+- 遗留风险：巡线参数仍是原厂默认未标定（2026-08-16 实机首跑乱走），主流程2
+  实机可用前须先完成巡线调参；脚本部署到机器后首跑需用户在场确认运动安全。
+
 ## 2026-08-17｜定位方案改造：Cartographer 2D 激光里程计 + IMU 桥（odom→base_link 替换 cmd_vel 积分）
 
 - 状态：改动完成（实机静态验证通过，运动验证待用户在场进行）

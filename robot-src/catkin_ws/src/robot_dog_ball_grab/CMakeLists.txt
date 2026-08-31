@@ -10,5 +10,6 @@ catkin_install_python(PROGRAMS
   scripts/ball_release.py
   scripts/rotate.py
   scripts/ball_grab_release.py
+  scripts/yolo_view.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

@@ -7,5 +7,6 @@ catkin_package()
 
 catkin_install_python(PROGRAMS
   scripts/follow_line.py
+  scripts/follow_line_tune.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
