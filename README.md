@@ -41,6 +41,7 @@
 ```text
 项目根目录/
 ├── archive/
+├── assets/
 ├── blender-maps/
 ├── catkin_ws/
 ├── competition-rules/
